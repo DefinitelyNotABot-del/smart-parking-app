@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome - Smart Parking</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        body {
+            background-color: #f0f2f5;
+        }
+        .login-container {
+            max-width: 400px;
+            margin: 100px auto;
+        }
+        .form-toggle-link {
+            cursor: pointer;
+            color: var(--primary-color);
+        }
+        .form-toggle-link:hover {
+            text-decoration: underline;
+        }
+        #signupForm {
+            display: none;
+        }
+        .google-btn {
+            background-color: #4285F4;
+            color: #fff;
+        }
+        .google-btn:hover {
+            background-color: #357ae8;
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container card">
+        <div class="card-body">
+            <div id="alert-container"></div>
+            <div id="loginForm">
+                <h3 class="text-center mb-4">Login</h3>
+                <form id="login-form">
+                    <div class="form-group">
+                        <label for="loginEmail">Email address</label>
+                        <input type="email" class="form-control" id="loginEmail" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="loginPassword">Password</label>
+                        <input type="password" class="form-control" id="loginPassword" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block">Login</button>
+                </form>
+                <hr>
+                <button class="btn btn-block google-btn">Login with Google</button>
+                <p class="text-center mt-3">Don't have an account? <span class="form-toggle-link" onclick="toggleForms()">Sign up</span></p>
+            </div>
+
+            <div id="signupForm">
+                <h3 class="text-center mb-4">Sign Up</h3>
+                <form id="signup-form">
+                    <div class="form-group">
+                        <label for="signupName">Full Name</label>
+                        <input type="text" class="form-control" id="signupName" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="signupEmail">Email address</label>
+                        <input type="email" class="form-control" id="signupEmail" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="signupPassword">Password</label>
+                        <input type="password" class="form-control" id="signupPassword" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block">Sign Up</button>
+                </form>
+                <hr>
+                <button class="btn btn-block google-btn">Sign Up with Google</button>
+                <p class="text-center mt-3">Already have an account? <span class="form-toggle-link" onclick="toggleForms()">Login</span></p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+
+            const response = await fetch('/api/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ email, password })
+            });
+
+            const result = await response.json();
+            showAlert(response.ok ? 'success' : 'danger', result.message);
+
+            if (response.ok && result.redirect) {
+                window.location.href = result.redirect;
+            }
+        });
+
+        document.getElementById('signup-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('signupName').value;
+            const email = document.getElementById('signupEmail').value;
+            const password = document.getElementById('signupPassword').value;
+
+            const response = await fetch('/api/register', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ name, email, password })
+            });
+
+            const result = await response.json();
+            showAlert(response.ok ? 'success' : 'danger', result.message);
+
+            if (response.ok) {
+                toggleForms();
+            }
+        });
+
+        function toggleForms() {
+            const loginForm = document.getElementById('loginForm');
+            const signupForm = document.getElementById('signupForm');
+            if (loginForm.style.display === 'none') {
+                loginForm.style.display = 'block';
+                signupForm.style.display = 'none';
+            } else {
+                loginForm.style.display = 'none';
+                signupForm.style.display = 'block';
+            }
+        }
+
+        function showAlert(type, message) {
+            const alertContainer = document.getElementById('alert-container');
+            const alert = `<div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                                ${message}
+                                <button type="button" class="close" data-dismiss="alert">
+                                    <span>&times;</span>
+                                </button>
+                           </div>`;
+            alertContainer.innerHTML = alert;
+        }
+    </script>
+</body>
+</html>

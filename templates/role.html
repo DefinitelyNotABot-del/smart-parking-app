@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Select Role - Smart Parking</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        body, html {
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #eef2f5;
+        }
+        .role-container {
+            text-align: center;
+            padding: 40px;
+        }
+        .role-btn {
+            margin: 10px;
+            padding: 20px 40px;
+            font-size: 1.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="role-container card">
+        <h1>Welcome to Smart Parking</h1>
+        <p>Please select your role:</p>
+        <a href="/set-role/customer" class="btn btn-primary role-btn">I am a Customer</a>
+        <a href="/set-role/owner" class="btn btn-secondary role-btn">I am an Owner</a>
+    </div>
+</body>
+</html>

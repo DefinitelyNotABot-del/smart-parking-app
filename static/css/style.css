@@ -1,0 +1,66 @@
+/* --- Global Styles --- */
+:root {
+    --primary-color: #007bff;
+    --secondary-color: #6c757d;
+    --success-color: #28a745;
+    --danger-color: #dc3545;
+    --light-color: #f8f9fa;
+    --dark-color: #343a40;
+    --font-family: 'Poppins', sans-serif;
+}
+
+body {
+    font-family: var(--font-family);
+    background-color: #eef2f5;
+}
+
+/* --- Bootstrap Overrides --- */
+.btn-primary {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.btn-primary:hover {
+    background-color: #0056b3;
+    border-color: #0056b3;
+}
+
+/* --- Custom Styles --- */
+.card {
+    border: none;
+    border-radius: 10px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.sidebar {
+    background-color: var(--light-color);
+    border-left: 1px solid #dee2e6;
+}
+
+/* --- Floating Sidebar --- */
+.sidebar {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    width: 400px;
+    height: calc(100% - 40px);
+    z-index: 1000;
+    transition: transform 0.3s ease-in-out;
+    transform: translateX(0);
+    padding: 20px;
+    overflow-y: auto;
+    background-color: white;
+    border-radius: 10px;
+}
+
+.sidebar.collapsed {
+    transform: translateX(-110%);
+}
+
+#sidebar-toggle {
+    position: absolute;
+    top: 20px;
+    left: 420px; /* Initial position */
+    z-index: 1001;
+    transition: left 0.3s ease-in-out;
+}

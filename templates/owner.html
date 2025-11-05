@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Owner Dashboard - Smart Parking</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        #addLotMap, #editLotMap {
+            height: 300px;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>Owner Dashboard</h1>
+            <button class="btn btn-primary" data-toggle="modal" data-target="#addLotModal">Add Lot</button>
+        </div>
+        <div id="alert-container"></div>
+        <div class="row" id="lotsContainer">
+            <!-- Lots will be loaded here as cards -->
+        </div>
+    </div>
+
+    <!-- Add Lot Modal -->
+    <div class="modal fade" id="addLotModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Lot</h5>
+                    <button type="button" class="close" data-dismiss="modal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <form id="addLotForm">
+                        <div class="form-group">
+                            <label for="addLotLocation">Location</label>
+                            <input type="text" class="form-control" id="addLotLocation" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="addTotalSpots">Total Number of Spots</label>
+                            <input type="number" class="form-control" id="addTotalSpots" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="addLargeSpots">Number of Large Spots</label>
+                            <input type="number" class="form-control" id="addLargeSpots" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="addSmallSpots">Number of Small Spots</label>
+                            <input type="number" class="form-control" id="addSmallSpots" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Select Location on Map</label>
+                            <div id="addLotMap" style="height: 300px;"></div>
+                            <input type="hidden" id="addLotLatitude">
+                            <input type="hidden" id="addLotLongitude">
+                        </div>
+                        <button type="submit" class="btn btn-primary">Save</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Lot Modal -->
+    <div class="modal fade" id="editLotModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Edit Lot</h5>
+                    <button type="button" class="close" data-dismiss="modal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <form id="editLotForm">
+                        <input type="hidden" id="editLotId">
+                        <div class="form-group">
+                            <label for="editLotLocation">Location</label>
+                            <input type="text" class="form-control" id="editLotLocation" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="editTotalSpots">Total Number of Spots</label>
+                            <input type="number" class="form-control" id="editTotalSpots" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="editLargeSpots">Number of Large Spots</label>
+                            <input type="number" class="form-control" id="editLargeSpots" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="editSmallSpots">Number of Small Spots</label>
+                            <input type="number" class="form-control" id="editSmallSpots" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Select Location on Map</label>
+                            <div id="editLotMap" style="height: 300px;"></div>
+                            <input type="hidden" id="editLotLatitude">
+                            <input type="hidden" id="editLotLongitude">
+                        </div>
+                        <button type="submit" class="btn btn-primary">Save Changes</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <script>
+        let addLotMap, editLotMap;
+        let addLotMarker, editLotMarker;
+
+        $(document).ready(function() {
+            loadLots();
+
+            $('#addLotModal').on('shown.bs.modal', function () {
+                if (!addLotMap) {
+                    addLotMap = L.map('addLotMap').setView([12.9716, 77.5946], 12); // Centered on Bangalore
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                    }).addTo(addLotMap);
+
+                    addLotMap.on('click', function(e) {
+                        if (addLotMarker) {
+                            addLotMap.removeLayer(addLotMarker);
+                        }
+                        addLotMarker = L.marker(e.latlng).addTo(addLotMap);
+                        $('#addLotLatitude').val(e.latlng.lat);
+                        $('#addLotLongitude').val(e.latlng.lng);
+                    });
+                } else {
+                    addLotMap.invalidateSize();
+                }
+            });
+
+            $('#editLotModal').on('shown.bs.modal', function () {
+                if (!editLotMap) {
+                    editLotMap = L.map('editLotMap').setView([12.9716, 77.5946], 12); // Centered on Bangalore
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                    }).addTo(editLotMap);
+
+                    editLotMap.on('click', function(e) {
+                        if (editLotMarker) {
+                            editLotMap.removeLayer(editLotMarker);
+                        }
+                        editLotMarker = L.marker(e.latlng).addTo(editLotMap);
+                        $('#editLotLatitude').val(e.latlng.lat);
+                        $('#editLotLongitude').val(e.latlng.lng);
+                    });
+                } else {
+                    editLotMap.invalidateSize();
+                }
+                // Populate map with existing lot data
+                const lat = $('#editLotLatitude').val();
+                const lng = $('#editLotLongitude').val();
+                if (lat && lng) {
+                    const latlng = L.latLng(lat, lng);
+                    if (editLotMarker) {
+                        editLotMap.removeLayer(editLotMarker);
+                    }
+                    editLotMarker = L.marker(latlng).addTo(editLotMap);
+                    editLotMap.setView(latlng, 15); // Zoom in on the existing marker
+                }
+            });
+
+            // Add Lot Form Submission
+            $('#addLotForm').submit(function(e) {
+                e.preventDefault();
+                const location = $('#addLotLocation').val();
+                const totalSpots = $('#addTotalSpots').val();
+                const largeSpots = $('#addLargeSpots').val();
+                const smallSpots = $('#addSmallSpots').val();
+                const latitude = $('#addLotLatitude').val();
+                const longitude = $('#addLotLongitude').val();
+
+                $.ajax({
+                    url: '/api/lot',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ 
+                        location: location,
+                        total_spots: totalSpots,
+                        large_spots: largeSpots,
+                        small_spots: smallSpots,
+                        latitude: latitude,
+                        longitude: longitude
+                    }),
+                    success: function(response) {
+                        showAlert('success', response.message);
+                        loadLots();
+                        $('#addLotModal').modal('hide');
+                    },
+                    error: function(xhr) {
+                        showAlert('danger', xhr.responseJSON.message);
+                    }
+                });
+            });
+
+            // Edit Lot Form Submission
+            $('#editLotForm').submit(function(e) {
+                e.preventDefault();
+                const lotId = $('#editLotId').val();
+                const location = $('#editLotLocation').val();
+                const totalSpots = $('#editTotalSpots').val();
+                const largeSpots = $('#editLargeSpots').val();
+                const smallSpots = $('#editSmallSpots').val();
+                const latitude = $('#editLotLatitude').val();
+                const longitude = $('#editLotLongitude').val();
+
+                $.ajax({
+                    url: `/api/lot/${lotId}`,
+                    method: 'PUT',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ 
+                        location: location,
+                        total_spots: totalSpots,
+                        large_spots: largeSpots,
+                        small_spots: smallSpots,
+                        latitude: latitude,
+                        longitude: longitude
+                    }),
+                    success: function(response) {
+                        showAlert('success', response.message);
+                        loadLots();
+                        $('#editLotModal').modal('hide');
+                    },
+                    error: function(xhr) {
+                        showAlert('danger', xhr.responseJSON.message);
+                    }
+                });
+            });
+        });
+
+        function loadLots() {
+            $.get('/api/lots', function(lots) {
+                const lotsContainer = $('#lotsContainer');
+                lotsContainer.empty();
+                lots.forEach(lot => {
+                    const freeSpots = lot.total_spots - lot.occupied_spots;
+                    const card = `
+                        <div class="col-md-6 col-lg-4 mb-4">
+                            <div class="card h-100">
+                                <div class="card-body">
+                                    <h5 class="card-title">${lot.location}</h5>
+                                    <div style="width: 150px; height: 150px; margin: auto;">
+                                        <canvas id="chart-${lot.lot_id}"></canvas>
+                                    </div>
+                                    <p class="card-text mt-3">
+                                        <strong>Total Spots:</strong> ${lot.total_spots}<br>
+                                        <strong>Occupied:</strong> ${lot.occupied_spots}<br>
+                                        <strong>Free:</strong> ${freeSpots}
+                                    </p>
+                                    <a href="/owner/lot/${lot.lot_id}" class="btn btn-sm btn-info">View Details</a>
+                                    <button class="btn btn-sm btn-primary" onclick='openEditModal(${JSON.stringify(lot)})'>Edit</button>
+                                    <button class="btn btn-sm btn-danger" onclick="deleteLot(${lot.lot_id})">Delete</button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    lotsContainer.append(card);
+
+                    // Create chart
+                    const ctx = document.getElementById(`chart-${lot.lot_id}`).getContext('2d');
+                    new Chart(ctx, {
+                        type: 'doughnut',
+                        data: {
+                            labels: ['Occupied', 'Free'],
+                            datasets: [{
+                                data: [lot.occupied_spots, freeSpots],
+                                backgroundColor: [
+                                    'rgba(220, 53, 69, 0.7)',
+                                    'rgba(40, 167, 69, 0.7)'
+                                ],
+                                borderColor: [
+                                    'rgba(220, 53, 69, 1)',
+                                    'rgba(40, 167, 69, 1)'
+                                ],
+                                borderWidth: 1
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: {
+                                    display: false
+                                }
+                            }
+                        }
+                    });
+                });
+            });
+        }
+
+        function openEditModal(lot) {
+            $('#editLotId').val(lot.lot_id);
+            $('#editLotLocation').val(lot.location);
+            $('#editTotalSpots').val(lot.total_spots);
+            $('#editLargeSpots').val(lot.spots.large || 0);
+            $('#editSmallSpots').val(lot.spots.compact || 0);
+            $('#editLotLatitude').val(lot.latitude);
+            $('#editLotLongitude').val(lot.longitude);
+            $('#editLotModal').modal('show');
+        }
+
+        function deleteLot(lotId) {
+            if (confirm('Are you sure you want to delete this lot?')) {
+                $.ajax({
+                    url: `/api/lot/${lotId}`,
+                    method: 'DELETE',
+                    success: function(response) {
+                        showAlert('success', response.message);
+                        loadLots();
+                    },
+                    error: function(xhr) {
+                        showAlert('danger', xhr.responseJSON.message);
+                    }
+                });
+            }
+        }
+
+        function showAlert(type, message) {
+            const alert = `<div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                                ${message}
+                                <button type="button" class="close" data-dismiss="alert">
+                                    <span>&times;</span>
+                                </button>
+                           </div>`;
+            $('#alert-container').html(alert);
+        }
+    </script>
+</body>
+</html>

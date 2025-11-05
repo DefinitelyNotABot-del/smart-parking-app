@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Customer - Smart Parking</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        body, html {
+            height: 100%;
+            margin: 0;
+        }
+        #map {
+            height: 100%;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <button id="sidebar-toggle" class="btn btn-primary">&lt;</button>
+    <div class="sidebar">
+        <div class="card">
+            <div class="card-body">
+                <h3>Find a Parking Spot</h3>
+                <div class="search-container">
+                    <input type="text" id="naturalLanguageSearch" class="form-control" placeholder="e.g., 'A spot near Garuda Mall'">
+                    <button id="searchBtn" class="btn btn-primary btn-block mt-2">Search</button>
+                    <div id="loadingSpinner" class="spinner-border text-primary mt-2" role="status" style="display:none;">
+                        <span class="sr-only">Loading...</span>
+                    </div>
+                </div>
+                <div id="resultsContainer">
+                    <!-- Search results will be displayed here -->
+                </div>
+            </div>
+        </div>
+        <div id="confirmationContainer" class="confirmation-container card mt-3">
+            <div class="card-body">
+                <h4>Booking Confirmation</h4>
+                <p id="confirmationDetails"></p>
+                <button id="endParkingBtn" class="btn btn-danger btn-block mt-2">End Parking</button>
+                <button id="newSearchBtn" class="btn btn-secondary btn-block mt-2">Book Another Spot</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script>
+        let bookedSpotId = localStorage.getItem('bookedSpotId');
+
+        const map = L.map('map').setView([12.9716, 77.5946], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        let marker;
+
+        const searchCard = document.querySelector('.sidebar > .card:not(.confirmation-container)');
+        const resultsContainer = document.getElementById('resultsContainer');
+        const confirmationContainer = document.getElementById('confirmationContainer');
+        const confirmationDetails = document.getElementById('confirmationDetails');
+        const searchInput = document.getElementById('naturalLanguageSearch');
+
+        function showSearchView() {
+            searchCard.style.display = 'block';
+            confirmationContainer.style.display = 'none';
+            searchInput.value = '';
+            resultsContainer.innerHTML = '';
+            bookedSpotId = null;
+            localStorage.removeItem('bookedSpotId');
+        }
+
+        function showConfirmationView(message, spotId) {
+            searchCard.style.display = 'none';
+            confirmationContainer.style.display = 'block';
+            confirmationDetails.textContent = message;
+            bookedSpotId = spotId;
+            localStorage.setItem('bookedSpotId', spotId);
+        }
+
+        async function validateBookingOnLoad() {
+            const spotId = localStorage.getItem('bookedSpotId');
+            if (spotId) {
+                try {
+                    const response = await fetch(`/api/validate-booking/${spotId}`);
+                    const result = await response.json();
+
+                    if (result.valid) {
+                        showConfirmationView(`You have a booking for Spot ${spotId}.`, spotId);
+                    } else {
+                        showSearchView();
+                    }
+                } catch (error) {
+                    console.error('Validation Error:', error);
+                    showSearchView();
+                }
+            } else {
+                showSearchView();
+            }
+        }
+
+        validateBookingOnLoad();
+
+        const searchBtn = document.getElementById('searchBtn');
+        const newSearchBtn = document.getElementById('newSearchBtn');
+        const endParkingBtn = document.getElementById('endParkingBtn');
+        const loadingSpinner = document.getElementById('loadingSpinner');
+
+        searchBtn.addEventListener('click', async () => {
+            const userQuery = searchInput.value;
+            if (!userQuery) return;
+
+            loadingSpinner.style.display = 'block';
+            searchBtn.disabled = true;
+            resultsContainer.innerHTML = '';
+
+            try {
+                const response = await fetch('/api/smart-search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_request: userQuery })
+                });
+
+                const result = await response.json();
+
+                if (result.error) {
+                    resultsContainer.innerHTML = `<p class="text-danger">${result.error}</p>`;
+                } else if (result.message) {
+                    resultsContainer.innerHTML = `<p>${result.message}</p>`;
+                } else if (result.spot_id && result.explanation) {
+                    resultsContainer.innerHTML = `
+                        <h5>Best Match Found!</h5>
+                        <p>Spot ID: ${result.spot_id}</p>
+                        <blockquote class="blockquote">
+                            <p class="mb-0">${result.explanation}</p>
+                            <footer class="blockquote-footer">AI Assistant</footer>
+                        </blockquote>
+                        <button id="bookBtn" class="btn btn-success btn-block">Book Now</button>
+                    `;
+
+                    if (result.latitude && result.longitude) {
+                        const latlng = [result.latitude, result.longitude];
+                        map.setView(latlng, 15);
+                        if (marker) map.removeLayer(marker);
+                        marker = L.marker(latlng).addTo(map);
+                    }
+
+                    document.getElementById('bookBtn').addEventListener('click', async () => {
+                        loadingSpinner.style.display = 'block';
+                        searchBtn.disabled = true;
+
+                        try {
+                            const bookResponse = await fetch('/api/book-spot', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ spot_id: result.spot_id })
+                            });
+
+                            const bookResult = await bookResponse.json();
+                            showConfirmationView(bookResult.message, result.spot_id);
+
+                        } catch (bookError) {
+                            console.error('Booking Error:', bookError);
+                            resultsContainer.innerHTML = `<p class="text-danger">Error booking spot.</p>`;
+                        } finally {
+                            loadingSpinner.style.display = 'none';
+                            searchBtn.disabled = false;
+                        }
+                    });
+                } else {
+                    resultsContainer.innerHTML = `<p class="text-info">Sorry, we don't have any available parking spots at that location. Please try a different area.</p>`;
+                }
+            } catch (error) {
+                console.error('Search Error:', error);
+                resultsContainer.innerHTML = `<p class="text-danger">Error performing search.</p>`;
+            } finally {
+                loadingSpinner.style.display = 'none';
+                searchBtn.disabled = false;
+            }
+        });
+
+        endParkingBtn.addEventListener('click', async () => {
+            const spotId = localStorage.getItem('bookedSpotId');
+            if (!spotId) return;
+
+            loadingSpinner.style.display = 'block';
+            endParkingBtn.disabled = true;
+
+            try {
+                const response = await fetch('/api/end-parking', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ spot_id: spotId })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showSearchView();
+                } else {
+                    confirmationDetails.textContent = `Error: ${result.message}`;
+                }
+            } catch (error) {
+                console.error('End Parking Error:', error);
+                confirmationDetails.textContent = 'Error ending parking.';
+            } finally {
+                loadingSpinner.style.display = 'none';
+                endParkingBtn.disabled = false;
+            }
+        });
+
+        newSearchBtn.addEventListener('click', () => {
+            showSearchView();
+        });
+
+        const sidebar = document.querySelector('.sidebar');
+        const sidebarToggle = document.getElementById('sidebar-toggle');
+
+        sidebarToggle.addEventListener('click', () => {
+            sidebar.classList.toggle('collapsed');
+            if (sidebar.classList.contains('collapsed')) {
+                sidebarToggle.innerHTML = '&gt;';
+                sidebarToggle.style.left = '20px';
+            } else {
+                sidebarToggle.innerHTML = '&lt;';
+                sidebarToggle.style.left = '420px';
+            }
+        });
+    </script>
+    <script>
+        const socket = io();
+
+        socket.on('status_change', function(data) {
+            console.log('Status change received:', data);
+            // TODO: Update map markers and UI based on the received data
+            if (marker && data.spot_id === bookedSpotId) {
+                if (data.status === 'occupied') {
+                    // You can change the marker icon or color here
+                    marker.setIcon(L.icon({iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png'}));
+                } else {
+                    marker.setIcon(L.icon({iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png'}));
+                }
+            }
+        });
+    </script>
+</body>
+</html>
