@@ -1,7 +1,10 @@
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
-import google.generativeai as genai
+try:
+    import google.generativeai as genai
+except Exception:
+    genai = None
 import os
 from dotenv import load_dotenv
 import json
@@ -71,16 +74,23 @@ setup_database()
 
 # --- AI Smart Search Function ---
 async def ai_smart_search(user_request, available_spots):
+    """Calls the Gemini API to find the best parking spot and get an explanation.
+
+    This function is defensive: if the `google.generativeai` package isn't
+    installed or the `GEMINI_API_KEY` is not set, it returns a clear error
+    dictionary instead of raising an exception so the app can continue to run.
     """
-    Calls the Gemini API to find the best parking spot and get an explanation.
-    """
+    if genai is None:
+        return {"error": "google.generativeai package not installed."}
+
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         return {"error": "GEMINI_API_KEY not found."}
-        
-genai.configure(api_key=api_key)
+
+    # Configure the client and call the model
+    genai.configure(api_key=api_key)
     model = genai.GenerativeModel('gemini-pro-latest')
-    
+
     prompt = f"""
     You are a helpful parking assistant. Your goal is to find the single best parking spot for a user based on their request and explain your choice.
 
@@ -91,10 +101,10 @@ genai.configure(api_key=api_key)
 
     Based on the user's request, which is the single best spot? Please return a JSON object with two keys: 'spot_id' and 'explanation'. The explanation should be a short sentence explaining why you chose that spot.
     """
-    
+
     try:
         response = await model.generate_content_async(prompt)
-        # Clean the response to ensure it is valid JSON
+        # Some model responses include markdown fences; strip them and parse JSON
         cleaned_response = response.text.strip().replace("```json", "").replace("```", "").strip()
         result = json.loads(cleaned_response)
         return result
