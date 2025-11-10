@@ -84,6 +84,7 @@ wsproto==1.2.0
 # You must provide a GEMINI_API_KEY to use the smart-search feature. See
 # `.env.example` for how to set the key and do not commit secrets to git.
 gunicorn
+eventlet
 uvicorn
 psycopg2-binary
 
