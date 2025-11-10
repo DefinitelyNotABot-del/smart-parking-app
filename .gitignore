@@ -64,6 +64,8 @@ db.sqlite3-journal
 # Flask stuff:
 instance/
 .webassets-cache
+flask_*.log
+*.log
 
 # Scrapy stuff:
 .scrapy
@@ -96,12 +98,19 @@ celerybeat.pid
 
 # Environments
 .env
+.env.*
 .venv
 env/
 venv/
 ENV/
 env.bak
 .env.bak
+
+# Database files (contain user data and should not be committed)
+*.db
+*.sqlite
+*.sqlite3
+data/*.db
 
 # Spyder project settings
 .spyderproject

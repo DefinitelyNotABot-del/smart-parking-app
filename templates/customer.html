@@ -26,7 +26,13 @@
     <div id="map"></div>
     <button id="sidebar-toggle" class="btn btn-primary">&lt;</button>
     <div class="sidebar">
-        <div class="card">
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 id="userNameDisplay" class="d-inline-block"></h5>
+                <button id="logoutBtn" class="btn btn-secondary btn-sm float-right">Logout</button>
+            </div>
+        </div>
+        <div class="card mb-3">
             <div class="card-body">
                 <h3>Find a Parking Spot</h3>
                 <div class="search-container">
@@ -41,12 +47,9 @@
                 </div>
             </div>
         </div>
-        <div id="confirmationContainer" class="confirmation-container card mt-3">
+        <div class="card">
             <div class="card-body">
-                <h4>Booking Confirmation</h4>
-                <p id="confirmationDetails"></p>
-                <button id="endParkingBtn" class="btn btn-danger btn-block mt-2">End Parking</button>
-                <button id="newSearchBtn" class="btn btn-secondary btn-block mt-2">Book Another Spot</button>
+                <div id="bookingsList"></div>
             </div>
         </div>
     </div>
@@ -56,8 +59,6 @@
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script>
-        let bookedSpotId = localStorage.getItem('bookedSpotId');
-
         const map = L.map('map').setView([12.9716, 77.5946], 13);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -65,56 +66,97 @@
 
         let marker;
 
-        const searchCard = document.querySelector('.sidebar > .card:not(.confirmation-container)');
+        const userNameDisplay = document.getElementById('userNameDisplay');
+        const bookingsList = document.getElementById('bookingsList');
         const resultsContainer = document.getElementById('resultsContainer');
-        const confirmationContainer = document.getElementById('confirmationContainer');
-        const confirmationDetails = document.getElementById('confirmationDetails');
         const searchInput = document.getElementById('naturalLanguageSearch');
+        const searchBtn = document.getElementById('searchBtn');
+        const loadingSpinner = document.getElementById('loadingSpinner');
+        const logoutBtn = document.getElementById('logoutBtn');
 
-        function showSearchView() {
-            searchCard.style.display = 'block';
-            confirmationContainer.style.display = 'none';
-            searchInput.value = '';
-            resultsContainer.innerHTML = '';
-            bookedSpotId = null;
-            localStorage.removeItem('bookedSpotId');
-        }
-
-        function showConfirmationView(message, spotId) {
-            searchCard.style.display = 'none';
-            confirmationContainer.style.display = 'block';
-            confirmationDetails.textContent = message;
-            bookedSpotId = spotId;
-            localStorage.setItem('bookedSpotId', spotId);
-        }
-
-        async function validateBookingOnLoad() {
-            const spotId = localStorage.getItem('bookedSpotId');
-            if (spotId) {
-                try {
-                    const response = await fetch(`/api/validate-booking/${spotId}`);
-                    const result = await response.json();
-
-                    if (result.valid) {
-                        showConfirmationView(`You have a booking for Spot ${spotId}.`, spotId);
-                    } else {
-                        showSearchView();
-                    }
-                } catch (error) {
-                    console.error('Validation Error:', error);
-                    showSearchView();
+        async function updateCustomerPage() {
+            // Fetch user info
+            try {
+                const userResponse = await fetch('/api/me');
+                if (!userResponse.ok) {
+                    if (userResponse.status === 401) window.location.href = '/login';
+                    return;
                 }
-            } else {
-                showSearchView();
+                const user = await userResponse.json();
+                userNameDisplay.textContent = user.name;
+
+                // If the user is also an owner, provide a button to switch views
+                if (user.is_owner) {
+                    const ownerSwitchBtn = document.createElement('a');
+                    ownerSwitchBtn.href = '/switch-role/owner';
+                    ownerSwitchBtn.className = 'btn btn-info btn-sm float-right mr-2';
+                    ownerSwitchBtn.textContent = 'Owner View';
+                    
+                    // Ensure button is not added multiple times
+                    const existingBtn = document.getElementById('ownerSwitchBtn');
+                    if (existingBtn) {
+                        existingBtn.remove();
+                    }
+                    ownerSwitchBtn.id = 'ownerSwitchBtn';
+
+                    logoutBtn.parentNode.insertBefore(ownerSwitchBtn, logoutBtn);
+                }
+
+            } catch (error) {
+                console.error('Error fetching user info:', error);
+                userNameDisplay.textContent = 'Could not load user data.';
+            }
+
+            // Fetch bookings
+            try {
+                const bookingsResponse = await fetch('/api/customer/bookings');
+                if (!bookingsResponse.ok) {
+                    if (bookingsResponse.status === 401) window.location.href = '/login';
+                    return;
+                }
+                const bookings = await bookingsResponse.json();
+
+                // Bookings list
+                bookingsList.innerHTML = ''; // Clear existing list
+                if (bookings && bookings.length > 0) {
+                    const listTitle = document.createElement('h5');
+                    listTitle.textContent = 'Your Bookings:';
+                    bookingsList.appendChild(listTitle);
+
+                    bookings.forEach(booking => {
+                        const bookingEl = document.createElement('div');
+                        bookingEl.className = 'booking-item card bg-light mb-2';
+                        bookingEl.innerHTML = `
+                            <div class="card-body">
+                                <p class="card-text">
+                                    <strong>Spot ${booking.spot_id}</strong> (${booking.type})<br>
+                                    at ${booking.location}
+                                </p>
+                                <button class="btn btn-danger btn-sm end-parking-btn" data-spot-id="${booking.spot_id}">End Parking</button>
+                            </div>
+                        `;
+                        bookingsList.appendChild(bookingEl);
+                    });
+                } else {
+                    bookingsList.innerHTML = '<h5>Your Bookings:</h5><p>You have no active bookings.</p>';
+                }
+
+            } catch (error) {
+                console.error('Error updating bookings:', error);
+                bookingsList.innerHTML = '<p>Could not load bookings.</p>';
             }
         }
 
-        validateBookingOnLoad();
-
-        const searchBtn = document.getElementById('searchBtn');
-        const newSearchBtn = document.getElementById('newSearchBtn');
-        const endParkingBtn = document.getElementById('endParkingBtn');
-        const loadingSpinner = document.getElementById('loadingSpinner');
+        logoutBtn.addEventListener('click', async () => {
+            try {
+                const response = await fetch('/api/logout');
+                if (response.ok) {
+                    window.location.href = '/';
+                }
+            } catch (error) {
+                console.error('Logout failed:', error);
+            }
+        });
 
         searchBtn.addEventListener('click', async () => {
             const userQuery = searchInput.value;
@@ -139,7 +181,7 @@
                     resultsContainer.innerHTML = `<p>${result.message}</p>`;
                 } else if (result.spot_id && result.explanation) {
                     resultsContainer.innerHTML = `
-                        <h5>Best Match Found!</h5>
+                        <h5>Spot Available</h5>
                         <p>Spot ID: ${result.spot_id}</p>
                         <blockquote class="blockquote">
                             <p class="mb-0">${result.explanation}</p>
@@ -156,25 +198,21 @@
                     }
 
                     document.getElementById('bookBtn').addEventListener('click', async () => {
-                        loadingSpinner.style.display = 'block';
-                        searchBtn.disabled = true;
-
                         try {
                             const bookResponse = await fetch('/api/book-spot', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({ spot_id: result.spot_id })
                             });
-
-                            const bookResult = await bookResponse.json();
-                            showConfirmationView(bookResult.message, result.spot_id);
-
+                            // After booking, refresh the whole page state
+                            updateCustomerPage();
+                            resultsContainer.innerHTML = `
+                                <p class="text-success">Booking successful!</p>
+                                <button id="newBookingBtn" class="btn btn-primary btn-block mt-2">Make Another Booking</button>
+                            `;
                         } catch (bookError) {
                             console.error('Booking Error:', bookError);
                             resultsContainer.innerHTML = `<p class="text-danger">Error booking spot.</p>`;
-                        } finally {
-                            loadingSpinner.style.display = 'none';
-                            searchBtn.disabled = false;
                         }
                     });
                 } else {
@@ -189,38 +227,47 @@
             }
         });
 
-        endParkingBtn.addEventListener('click', async () => {
-            const spotId = localStorage.getItem('bookedSpotId');
-            if (!spotId) return;
-
-            loadingSpinner.style.display = 'block';
-            endParkingBtn.disabled = true;
-
-            try {
-                const response = await fetch('/api/end-parking', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ spot_id: spotId })
-                });
-
-                const result = await response.json();
-
-                if (response.ok) {
-                    showSearchView();
-                } else {
-                    confirmationDetails.textContent = `Error: ${result.message}`;
-                }
-            } catch (error) {
-                console.error('End Parking Error:', error);
-                confirmationDetails.textContent = 'Error ending parking.';
-            } finally {
-                loadingSpinner.style.display = 'none';
-                endParkingBtn.disabled = false;
+        resultsContainer.addEventListener('click', (event) => {
+            if (event.target && event.target.id === 'newBookingBtn') {
+                resultsContainer.innerHTML = '';
             }
         });
 
-        newSearchBtn.addEventListener('click', () => {
-            showSearchView();
+        // Event delegation for "End Parking" buttons
+        document.addEventListener('click', async (event) => {
+            if (event.target.matches('.end-parking-btn')) {
+                const spotId = event.target.dataset.spotId;
+                const button = event.target;
+                button.disabled = true;
+
+                try {
+                    const response = await fetch('/api/end-parking', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ spot_id: spotId })
+                    });
+
+                    if (response.ok) {
+                        // Refresh the page state to show the booking is gone
+                        updateCustomerPage();
+                    } else {
+                        const result = await response.json();
+                        // Find the parent card body and show an error
+                        const cardBody = button.closest('.card-body');
+                        let errorP = cardBody.querySelector('.text-danger');
+                        if (!errorP) {
+                            errorP = document.createElement('p');
+                            errorP.className = 'text-danger mt-2';
+                            cardBody.appendChild(errorP);
+                        }
+                        errorP.textContent = `Error: ${result.message}`;
+                        button.disabled = false;
+                    }
+                } catch (error) {
+                    console.error('End Parking Error:', error);
+                    button.disabled = false;
+                }
+            }
         });
 
         const sidebar = document.querySelector('.sidebar');
@@ -236,6 +283,9 @@
                 sidebarToggle.style.left = '420px';
             }
         });
+
+        // Initial page load
+        updateCustomerPage();
     </script>
     <script>
         const socket = io();
@@ -243,14 +293,7 @@
         socket.on('status_change', function(data) {
             console.log('Status change received:', data);
             // TODO: Update map markers and UI based on the received data
-            if (marker && data.spot_id === bookedSpotId) {
-                if (data.status === 'occupied') {
-                    // You can change the marker icon or color here
-                    marker.setIcon(L.icon({iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png'}));
-                } else {
-                    marker.setIcon(L.icon({iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png'}));
-                }
-            }
+            // This part might need to be updated to handle multiple markers if multiple bookings are shown on the map
         });
     </script>
 </body>

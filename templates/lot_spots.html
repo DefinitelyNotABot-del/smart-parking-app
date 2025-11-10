@@ -10,45 +10,13 @@
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <style>
-        .spot-visual {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
-            gap: 10px;
-            margin-top: 20px;
-        }
-        .spot {
-            border: 1px solid #ccc;
-            padding: 10px;
-            text-align: center;
-            border-radius: 5px;
-        }
-        .spot.available {
-            background-color: var(--success-color);
-            color: white;
-        }
-        .spot.occupied {
-            background-color: var(--danger-color);
-            color: white;
-        }
-        .spot.maintenance {
-            background-color: #ffc107;
-        }
+        /* No specific styles for spot visuals as they are removed */
     </style>
 </head>
 <body>
     <div class="container mt-5">
         <h1 id="lotName">Manage Spots</h1>
-        <div class="card mb-4">
-            <div class="card-header">
-                Spot Layout
-            </div>
-            <div class="card-body">
-                <div class="spot-visual" id="spotVisual">
-                    <!-- Spots will be visually represented here -->
-                </div>
-            </div>
-        </div>
-
+        
         <div class="card">
             <div class="card-header">
                 Spots
@@ -87,7 +55,7 @@
                             <label for="spotType">Type</label>
                             <select class="form-control" id="spotType" required>
                                 <option value="large">Large</option>
-                                <option value="compact">Compact</option>
+                                <option value="small">Small</option>
                                 <option value="ev">EV</option>
                                 <option value="handicap">Handicap</option>
                             </select>
@@ -110,11 +78,19 @@
     <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 
     <script>
         $(document).ready(function() {
             const lotId = window.location.pathname.split('/').pop();
             loadSpots(lotId);
+
+            const socket = io();
+
+            socket.on('status_change', function(data) {
+                console.log('Status change received on lot spots page:', data);
+                loadSpots(lotId);
+            });
 
             $('#spotForm').submit(function(e) {
                 e.preventDefault();
@@ -141,29 +117,29 @@
             $.get(`/api/lot/${lotId}`, function(lot) {
                 $('#lotName').text(`Manage Spots for ${lot.location}`);
                 const spotsTable = $('#spotsTable');
-                const spotVisual = $('#spotVisual');
                 spotsTable.empty();
-                spotVisual.empty();
 
                 if (lot.spots) {
                     lot.spots.forEach(spot => {
+                        let statusColor = '';
+                        if (spot.status === 'available') {
+                            statusColor = 'text-success';
+                        } else if (spot.status === 'occupied') {
+                            statusColor = 'text-danger';
+                        } else if (spot.status === 'maintenance') {
+                            statusColor = 'text-warning';
+                        }
+
                         spotsTable.append(`
                             <tr>
                                 <td>${spot.spot_id}</td>
-                                <td>${spot.type}</td>
-                                <td>${spot.status}</td>
+                                <td>${spot.type === 'motorcycle' ? 'small' : spot.type}</td>
+                                <td class="${statusColor}">${spot.status}</td>
                                 <td>
                                     <button class="btn btn-sm btn-primary" onclick="editSpot('${spot.spot_id}', '${spot.type}', '${spot.status}')">Edit</button>
                                     <button class="btn btn-sm btn-danger" onclick="deleteSpot('${lot.lot_id}', '${spot.spot_id}')">Delete</button>
                                 </td>
                             </tr>
-                        `);
-
-                        spotVisual.append(`
-                            <div class="spot ${spot.status}">
-                                <strong>${spot.spot_id}</strong><br>
-                                ${spot.type}
-                            </div>
                         `);
                     });
                 }
@@ -172,7 +148,8 @@
 
         function editSpot(spotId, type, status) {
             $('#spotId').val(spotId);
-            $('#spotType').val(type);
+            // Ensure 'motorcycle' type from backend is mapped to 'small' in the UI for editing
+            $('#spotType').val(type === 'motorcycle' ? 'small' : type);
             $('#spotStatus').val(status);
             $('#spotModal').modal('show');
         }

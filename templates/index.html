@@ -89,12 +89,21 @@
             const email = document.getElementById('loginEmail').value;
             const password = document.getElementById('loginPassword').value;
 
+            // Extract role from URL query parameter
+            const urlParams = new URLSearchParams(window.location.search);
+            const role = urlParams.get('role');
+
+            const requestBody = { email, password };
+            if (role) {
+                requestBody.role = role;
+            }
+
             const response = await fetch('/api/login', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ email, password })
+                body: JSON.stringify(requestBody)
             });
 
             const result = await response.json();

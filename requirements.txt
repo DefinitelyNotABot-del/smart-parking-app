@@ -14,7 +14,7 @@ click==8.3.0
 colorama==0.4.6
 cryptography==46.0.3
 firebase_admin==7.1.0
-Flask==3.1.2
+Flask[async]==3.1.2
 Flask-SocketIO==5.5.1
 google-ai-generativelanguage==0.6.15
 google-api-core==2.28.1
@@ -83,3 +83,10 @@ wsproto==1.2.0
 # Note: google-generativeai (the Gemini client) has been added above.
 # You must provide a GEMINI_API_KEY to use the smart-search feature. See
 # `.env.example` for how to set the key and do not commit secrets to git.
+gunicorn
+uvicorn
+psycopg2-binary
+
+# Added for Azure Key Vault Integration
+azure-keyvault-secrets
+azure-identity
