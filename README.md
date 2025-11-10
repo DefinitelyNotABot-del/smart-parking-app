@@ -1,6 +1,50 @@
-# Smart Parking App
+# 🅿️ Smart Parking App
 
-This is a full-stack web application designed to streamline the process of finding and managing parking for both customers and parking lot owners.
+Real-time parking management with AI-powered search. Deploy to Azure in minutes with $100 free student credits!
+
+## 🚀 Quick Deploy to Azure (Free Tier)
+
+**Cost: $0/month on Free tier** (uses ~$0 of your $100 credit)
+
+### Prerequisites
+- Azure student account ($100 credit)
+- GitHub account
+- Git Bash (for Windows)
+
+### Setup (One-Time - 5 minutes)
+
+1. **Run Azure Setup Script:**
+```bash
+# In Git Bash or Azure Cloud Shell
+chmod +x setup-azure.sh
+./setup-azure.sh
+```
+
+2. **Add GitHub Secrets:**
+Go to: `Settings` → `Secrets and variables` → `Actions` → `New repository secret`
+
+Add these 5 secrets from the script output:
+- `AZURE_CLIENT_ID`
+- `AZURE_TENANT_ID`
+- `AZURE_SUBSCRIPTION_ID`
+- `GEMINI_API_KEY` (from Google AI Studio)
+- `FLASK_SECRET_KEY` (generate: `python -c "import secrets; print(secrets.token_hex(32))"`)
+
+3. **Deploy:**
+```bash
+git add .
+git commit -m "Configure Azure deployment"
+git push origin main
+```
+
+Your app will be live at: `https://smart-parking-app.azurewebsites.net`
+
+## 🔒 Security Features
+
+- **Federated Credentials (OIDC)** - No service principal keys stored!
+- **Managed Identity** - Azure resources authenticate automatically
+- **GitHub Secrets** - All sensitive data encrypted
+- **No manual key rotation** - Automatic credential management
 
 ## Project Structure
 
