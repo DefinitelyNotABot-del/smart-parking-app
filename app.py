@@ -2,11 +2,6 @@ from flask import Flask, render_template, request, jsonify, session, redirect, u
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 try:
-    import psycopg2
-    import psycopg2.extras
-except ImportError:
-    psycopg2 = None
-try:
     import google.generativeai as genai
 except Exception:
     genai = None
@@ -17,45 +12,9 @@ from flask_socketio import SocketIO
 import logging
 import click
 
-# --- Azure Key Vault Integration ---
-def load_secrets_from_key_vault():
-    """Fetches secrets from Azure Key Vault and sets them as environment variables."""
-    key_vault_name = os.getenv("KEY_VAULT_NAME")
-    if not key_vault_name:
-        return
-
-    try:
-        from azure.keyvault.secrets import SecretClient
-        from azure.identity import DefaultAzureCredential
-
-        credential = DefaultAzureCredential()
-        vault_url = f"https://{key_vault_name}.vault.azure.net/"
-        client = SecretClient(vault_url=vault_url, credential=credential)
-
-        secret_names = {
-            "DATABASE-URL": "DATABASE_URL",
-            "GEMINI-API-KEY": "GEMINI_API_KEY",
-            "FLASK-SECRET-KEY": "FLASK_SECRET_KEY",
-        }
-
-        logging.info(f"Connecting to Key Vault: {key_vault_name}")
-        for kv_name, env_name in secret_names.items():
-            try:
-                secret = client.get_secret(kv_name)
-                os.environ[env_name] = secret.value
-                logging.info(f"Loaded secret '{kv_name}' from Key Vault.")
-            except Exception as e:
-                logging.error(f"Failed to fetch secret '{kv_name}': {e}")
-    
-    except ImportError:
-        logging.warning("Azure libraries not installed. Skipping Key Vault integration.")
-    except Exception as e:
-        logging.error(f"Failed to connect to Azure Key Vault: {e}")
-
 # --- App Initialization ---
 logging.basicConfig(level=logging.INFO)
 load_dotenv()
-load_secrets_from_key_vault()
 
 app = Flask(__name__)
 # CRITICAL: Load secret key from environment variable for production
@@ -63,22 +22,14 @@ app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev_fallback_secret_key_12345')
 socketio = SocketIO(app)
 
 # --- Database Configuration & Management ---
-DB_TYPE = 'pgsql' if os.getenv("DATABASE_URL") else 'sqlite'
-SQL_PLACEHOLDER = '%s' if DB_TYPE == 'pgsql' else '?'
 DB_FILE = "data/parking.db"
 
 def get_db():
-    """
-    Opens a new database connection if there is none yet for the
-    current application context.
-    """
+    """Opens a new database connection if there is none yet for the current application context."""
     if 'db' not in g:
-        if DB_TYPE == 'pgsql':
-            g.db = psycopg2.connect(os.getenv("DATABASE_URL"))
-        else:
-            os.makedirs("data", exist_ok=True)
-            g.db = sqlite3.connect(DB_FILE)
-            g.db.row_factory = sqlite3.Row
+        os.makedirs("data", exist_ok=True)
+        g.db = sqlite3.connect(DB_FILE)
+        g.db.row_factory = sqlite3.Row
     return g.db
 
 @app.teardown_appcontext
@@ -90,10 +41,7 @@ def close_db(e=None):
 
 def get_cursor():
     """Gets a cursor from the request-bound database connection."""
-    db = get_db()
-    if DB_TYPE == 'pgsql':
-        return db.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    return db.cursor()
+    return get_db().cursor()
 
 def init_db(force_reset=False):
     """Creates the database tables."""
@@ -105,71 +53,42 @@ def init_db(force_reset=False):
         cursor.execute("DROP TABLE IF EXISTS lots")
         cursor.execute("DROP TABLE IF EXISTS users")
 
-    if DB_TYPE == 'pgsql':
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                user_id SERIAL PRIMARY KEY,
-                name TEXT NOT NULL,
-                email TEXT NOT NULL UNIQUE,
-                password_hash TEXT NOT NULL,
-                role TEXT NOT NULL DEFAULT 'customer'
-            )
-        """)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS lots (
-                lot_id SERIAL PRIMARY KEY,
-                user_id INTEGER REFERENCES users(user_id),
-                location TEXT NOT NULL,
-                latitude REAL,
-                longitude REAL
-            )
-        """)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS spots (
-                spot_id SERIAL PRIMARY KEY,
-                lot_id INTEGER REFERENCES lots(lot_id),
-                type TEXT NOT NULL,
-                status TEXT NOT NULL,
-                booked_by_user_id INTEGER REFERENCES users(user_id)
-            )
-        """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            email TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL
+        )
+    """)
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'customer'")
+    except sqlite3.OperationalError:
+        db.rollback()
     else:
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                user_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                email TEXT NOT NULL UNIQUE,
-                password_hash TEXT NOT NULL
-            )
-        """)
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'customer'")
-        except sqlite3.OperationalError:
-            db.rollback()
-        else:
-            db.commit()
-        
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS lots (
-                lot_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                location TEXT NOT NULL,
-                latitude REAL,
-                longitude REAL,
-                FOREIGN KEY (user_id) REFERENCES users (user_id)
-            )
-        """)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS spots (
-                spot_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                lot_id INTEGER,
-                type TEXT NOT NULL,
-                status TEXT NOT NULL,
-                booked_by_user_id INTEGER,
-                FOREIGN KEY (lot_id) REFERENCES lots (lot_id),
-                FOREIGN KEY (booked_by_user_id) REFERENCES users (user_id)
-            )
-        """)
+        db.commit()
+    
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS lots (
+            lot_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            location TEXT NOT NULL,
+            latitude REAL,
+            longitude REAL,
+            FOREIGN KEY (user_id) REFERENCES users (user_id)
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS spots (
+            spot_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            lot_id INTEGER,
+            type TEXT NOT NULL,
+            status TEXT NOT NULL,
+            booked_by_user_id INTEGER,
+            FOREIGN KEY (lot_id) REFERENCES lots (lot_id),
+            FOREIGN KEY (booked_by_user_id) REFERENCES users (user_id)
+        )
+    """)
 
     db.commit()
 
@@ -208,7 +127,7 @@ async def ai_smart_search(user_request, available_spots):
 # --- Booking Function ---
 def book_spot(spot_id, user_id):
     """Updates a row in the 'spots' table to book a spot."""
-    sql = f"UPDATE spots SET status = 'occupied', booked_by_user_id = {SQL_PLACEHOLDER} WHERE spot_id = {SQL_PLACEHOLDER} AND status = 'available'"
+    sql = f"UPDATE spots SET status = 'occupied', booked_by_user_id = ? WHERE spot_id = ? AND status = 'available'"
     try:
         db = get_db()
         cursor = db.cursor()
@@ -265,7 +184,7 @@ def get_customer_bookings():
     cursor.execute(f"""
         SELECT s.spot_id, s.type, s.status, l.location
         FROM spots s JOIN lots l ON s.lot_id = l.lot_id
-        WHERE s.booked_by_user_id = {SQL_PLACEHOLDER}
+        WHERE s.booked_by_user_id = ?
     """, (user_id,))
     bookings = [dict(row) for row in cursor.fetchall()]
     return jsonify(bookings)
@@ -279,7 +198,7 @@ def register_user():
         return jsonify({"message": "Missing required fields"}), 400
 
     hashed_password = generate_password_hash(password)
-    sql = f"INSERT INTO users (name, email, password_hash) VALUES ({SQL_PLACEHOLDER}, {SQL_PLACEHOLDER}, {SQL_PLACEHOLDER})"
+    sql = f"INSERT INTO users (name, email, password_hash) VALUES (?, ?, ?)"
 
     try:
         db = get_db()
@@ -300,7 +219,7 @@ def login_user():
         return jsonify({"message": "Missing required fields"}), 400
 
     cursor = get_cursor()
-    cursor.execute(f"SELECT * FROM users WHERE email = {SQL_PLACEHOLDER}", (email,))
+    cursor.execute(f"SELECT * FROM users WHERE email = ?", (email,))
     user = cursor.fetchone()
 
     if user and check_password_hash(user['password_hash'], password):
@@ -318,7 +237,7 @@ def switch_role(new_role):
     if new_role in ['customer', 'owner']:
         if new_role == 'owner':
             cursor = get_cursor()
-            cursor.execute(f"SELECT COUNT(*) FROM lots WHERE user_id = {SQL_PLACEHOLDER}", (session['user_id'],))
+            cursor.execute(f"SELECT COUNT(*) FROM lots WHERE user_id = ?", (session['user_id'],))
             if cursor.fetchone()[0] == 0:
                 return redirect(url_for('customer_page'))
         session['role'] = new_role
@@ -333,7 +252,7 @@ def get_me():
         return jsonify({"message": "Unauthorized"}), 401
     
     cursor = get_cursor()
-    cursor.execute(f"SELECT COUNT(*) FROM lots WHERE user_id = {SQL_PLACEHOLDER}", (user_id,))
+    cursor.execute(f"SELECT COUNT(*) FROM lots WHERE user_id = ?", (user_id,))
     lot_count = cursor.fetchone()[0]
     
     return jsonify({'name': session.get('name'), 'role': session.get('role'), 'is_owner': lot_count > 0})
@@ -395,7 +314,7 @@ def end_parking_route():
 
     spot_id = request.get_json().get('spot_id')
     cursor = get_cursor()
-    cursor.execute(f"SELECT s.booked_by_user_id, l.user_id as lot_owner_id FROM spots s JOIN lots l ON s.lot_id = l.lot_id WHERE s.spot_id = {SQL_PLACEHOLDER}", (spot_id,))
+    cursor.execute(f"SELECT s.booked_by_user_id, l.user_id as lot_owner_id FROM spots s JOIN lots l ON s.lot_id = l.lot_id WHERE s.spot_id = ?", (spot_id,))
     result = cursor.fetchone()
 
     if not result: return jsonify({"message": "Spot not found"}), 404
@@ -405,7 +324,7 @@ def end_parking_route():
 
     try:
         db = get_db()
-        cursor.execute(f"UPDATE spots SET status = 'available', booked_by_user_id = NULL WHERE spot_id = {SQL_PLACEHOLDER}", (spot_id,))
+        cursor.execute(f"UPDATE spots SET status = 'available', booked_by_user_id = NULL WHERE spot_id = ?", (spot_id,))
         db.commit()
         socketio.emit('status_change', {'spot_id': spot_id, 'status': 'available'})
         return jsonify({"message": f"Parking ended for Spot {spot_id}!"})
@@ -421,13 +340,13 @@ def get_lots():
         return jsonify({"message": "Unauthorized"}), 401
 
     cursor = get_cursor()
-    cursor.execute(f"SELECT * FROM lots WHERE user_id = {SQL_PLACEHOLDER}", (user_id,))
+    cursor.execute(f"SELECT * FROM lots WHERE user_id = ?", (user_id,))
     lots = [dict(row) for row in cursor.fetchall()]
     for lot in lots:
-        cursor.execute(f"SELECT type, COUNT(*) as count FROM spots WHERE lot_id = {SQL_PLACEHOLDER} GROUP BY type", (lot['lot_id'],))
+        cursor.execute(f"SELECT type, COUNT(*) as count FROM spots WHERE lot_id = ? GROUP BY type", (lot['lot_id'],))
         lot['spots'] = {row['type']: row['count'] for row in cursor.fetchall()}
         lot['total_spots'] = sum(lot['spots'].values())
-        cursor.execute(f"SELECT COUNT(*) FROM spots WHERE lot_id = {SQL_PLACEHOLDER} AND status = 'occupied'", (lot['lot_id'],))
+        cursor.execute(f"SELECT COUNT(*) FROM spots WHERE lot_id = ? AND status = 'occupied'", (lot['lot_id'],))
         lot['occupied_spots'] = cursor.fetchone()[0]
     
     response = jsonify(lots)
@@ -443,23 +362,18 @@ def create_lot():
     db = get_db()
     cursor = db.cursor()
     
-    sql = f"INSERT INTO lots (user_id, location, latitude, longitude) VALUES ({SQL_PLACEHOLDER}, {SQL_PLACEHOLDER}, {SQL_PLACEHOLDER}, {SQL_PLACEHOLDER})"
+    sql = f"INSERT INTO lots (user_id, location, latitude, longitude) VALUES (?, ?, ?, ?)"
     params = (user_id, data.get('location'), data.get('latitude'), data.get('longitude'))
     
-    if DB_TYPE == 'pgsql':
-        sql += " RETURNING lot_id"
-        cursor.execute(sql, params)
-        lot_id = cursor.fetchone()[0]
-    else:
-        cursor.execute(sql, params)
-        lot_id = cursor.lastrowid
+    cursor.execute(sql, params)
+    lot_id = cursor.lastrowid
 
     spots = []
     for _ in range(int(data.get('large_spots', 0))): spots.append((lot_id, 'large', 'available'))
     for _ in range(int(data.get('motorcycle_spots', 0))): spots.append((lot_id, 'motorcycle', 'available'))
 
     if spots:
-        spot_sql = f"INSERT INTO spots (lot_id, type, status) VALUES ({SQL_PLACEHOLDER}, {SQL_PLACEHOLDER}, {SQL_PLACEHOLDER})"
+        spot_sql = f"INSERT INTO spots (lot_id, type, status) VALUES (?, ?, ?)"
         cursor.executemany(spot_sql, spots)
 
     db.commit()
@@ -471,12 +385,12 @@ def get_lot(lot_id):
     if not user_id: return jsonify({"message": "Unauthorized"}), 401
 
     cursor = get_cursor()
-    cursor.execute(f"SELECT * FROM lots WHERE lot_id = {SQL_PLACEHOLDER} AND user_id = {SQL_PLACEHOLDER}", (lot_id, user_id))
+    cursor.execute(f"SELECT * FROM lots WHERE lot_id = ? AND user_id = ?", (lot_id, user_id))
     lot = cursor.fetchone()
     if not lot: return jsonify({"message": "Lot not found or unauthorized"}), 404
     
     lot = dict(lot)
-    cursor.execute(f"SELECT * FROM spots WHERE lot_id = {SQL_PLACEHOLDER}", (lot_id,))
+    cursor.execute(f"SELECT * FROM spots WHERE lot_id = ?", (lot_id,))
     lot['spots'] = [dict(row) for row in cursor.fetchall()]
     lot['total_spots'] = len(lot['spots'])
     return jsonify(lot)
@@ -488,22 +402,22 @@ def update_lot(lot_id):
 
     db = get_db()
     cursor = db.cursor()
-    cursor.execute(f"SELECT user_id FROM lots WHERE lot_id = {SQL_PLACEHOLDER}", (lot_id,))
+    cursor.execute(f"SELECT user_id FROM lots WHERE lot_id = ?", (lot_id,))
     lot_owner = cursor.fetchone()
     if not lot_owner or lot_owner['user_id'] != user_id:
         return jsonify({"message": "Unauthorized to update this lot"}), 403
 
     data = request.get_json()
     params = (data.get('location'), data.get('latitude'), data.get('longitude'), lot_id)
-    cursor.execute(f"UPDATE lots SET location = {SQL_PLACEHOLDER}, latitude = {SQL_PLACEHOLDER}, longitude = {SQL_PLACEHOLDER} WHERE lot_id = {SQL_PLACEHOLDER}", params)
+    cursor.execute(f"UPDATE lots SET location = ?, latitude = ?, longitude = ? WHERE lot_id = ?", params)
 
-    cursor.execute(f"DELETE FROM spots WHERE lot_id = {SQL_PLACEHOLDER}", (lot_id,))
+    cursor.execute(f"DELETE FROM spots WHERE lot_id = ?", (lot_id,))
     spots = []
     for _ in range(int(data.get('large_spots', 0))): spots.append((lot_id, 'large', 'available'))
     for _ in range(int(data.get('motorcycle_spots', 0))): spots.append((lot_id, 'motorcycle', 'available'))
 
     if spots:
-        spot_sql = f"INSERT INTO spots (lot_id, type, status) VALUES ({SQL_PLACEHOLDER}, {SQL_PLACEHOLDER}, {SQL_PLACEHOLDER})"
+        spot_sql = f"INSERT INTO spots (lot_id, type, status) VALUES (?, ?, ?)"
         cursor.executemany(spot_sql, spots)
 
     db.commit()
@@ -516,13 +430,13 @@ def delete_lot(lot_id):
 
     db = get_db()
     cursor = db.cursor()
-    cursor.execute(f"SELECT user_id FROM lots WHERE lot_id = {SQL_PLACEHOLDER}", (lot_id,))
+    cursor.execute(f"SELECT user_id FROM lots WHERE lot_id = ?", (lot_id,))
     lot_owner = cursor.fetchone()
     if not lot_owner or lot_owner['user_id'] != user_id:
         return jsonify({"message": "Unauthorized to delete this lot"}), 403
 
-    cursor.execute(f"DELETE FROM spots WHERE lot_id = {SQL_PLACEHOLDER}", (lot_id,))
-    cursor.execute(f"DELETE FROM lots WHERE lot_id = {SQL_PLACEHOLDER}", (lot_id,))
+    cursor.execute(f"DELETE FROM spots WHERE lot_id = ?", (lot_id,))
+    cursor.execute(f"DELETE FROM lots WHERE lot_id = ?", (lot_id,))
     db.commit()
     return jsonify({"message": "Lot deleted successfully"})
 
@@ -534,7 +448,7 @@ def validate_booking(spot_id):
     if not user_id: return jsonify({"valid": False}), 401
 
     cursor = get_cursor()
-    cursor.execute(f"SELECT booked_by_user_id FROM spots WHERE spot_id = {SQL_PLACEHOLDER}", (spot_id,))
+    cursor.execute(f"SELECT booked_by_user_id FROM spots WHERE spot_id = ?", (spot_id,))
     result = cursor.fetchone()
 
     return jsonify({"valid": result and result['booked_by_user_id'] == user_id})
