@@ -1,0 +1,54 @@
+# This file specifies files that are *not* uploaded to Google Cloud
+# using gcloud. It follows the same syntax as .gitignore
+
+.gcloudignore
+.git
+.gitignore
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist/
+build/
+
+# Environment and local files
+.env
+.venv
+env/
+venv/
+*.db
+*.sqlite
+*.sqlite3
+data/*.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Test files
+test_*.py
+*_test.py
+tests/
+test_flows.py
+
+# Documentation
+README.md
+*.md
+
+# Logs
+*.log
+flask_*.log
+
+# Azure specific (not needed for GCP)
+setup_azure.sh
+.github/
+
+# Development
+check_app.py

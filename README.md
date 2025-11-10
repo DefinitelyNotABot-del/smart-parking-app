@@ -81,14 +81,66 @@ The application should now be running on `http://127.0.0.1:5000/`.
 
 ### Customer Dashboard
 
-- **AI-Powered Smart Search:** Find parking spots using natural language queries.
-- **Interactive Map:** Visualize parking lot locations.
-- **Real-time Booking:** Book available parking spots.
-- **End Parking:** Mark a booked spot as available.
+- **AI-Powered Smart Search:** Find parking spots using natural language queries (powered by Google Gemini).
+- **Interactive Map:** Visualize parking lot locations with Leaflet.js.
+- **Real-time Booking:** Book available parking spots instantly.
+- **Multiple Bookings:** Manage multiple active parking sessions.
+- **Live Updates:** Real-time spot availability via WebSockets.
 
 ### Owner Dashboard
 
-- **CRUD for Parking Lots:** Add, edit, and delete parking lots.
-- **Interactive Map for Lot Location:** Precisely select lot coordinates.
+- **CRUD for Parking Lots:** Add, edit, and delete parking lots with ease.
+- **Interactive Map:** Precisely select lot coordinates on an interactive map.
 - **Spot Management:** Add, edit, and delete individual spots within a lot.
-- **Occupancy Overview:** Monitor total and occupied spots for each lot.
+- **Visual Analytics:** View occupancy charts and statistics.
+- **Real-time Dashboard:** Monitor all lots with live updates.
+
+### Technical Features
+
+- **Dual Database Support:** SQLite (development) or PostgreSQL (production).
+- **Cloud-Ready:** Optimized for Google Cloud Run and Azure deployment.
+- **Docker Support:** Containerized for easy deployment.
+- **Secure:** Environment-based secrets, API key protection.
+- **Tested:** Comprehensive test suite included.
+
+## Deployment
+
+### Deploy to Google Cloud Platform (Recommended)
+
+**Free Tier Benefits:**
+- 2 million requests/month free
+- Auto-scaling from 0
+- No cost when idle
+
+**Quick Deploy:**
+```bash
+# See detailed guide
+cat DEPLOY_GCP.md
+
+# Or run the deployment script
+bash deploy-gcp.sh
+```
+
+📖 **Full Guide:** [DEPLOY_GCP.md](./DEPLOY_GCP.md)
+
+### Run with Docker
+
+```bash
+# Build image
+docker build -t smart-parking-app .
+
+# Run container
+docker run -p 8080:8080 -e GEMINI_API_KEY=your_key smart-parking-app
+```
+
+## Testing
+
+Run the comprehensive test suite:
+
+```bash
+# Start the app first
+python app.py
+
+# In another terminal, run tests
+python test_flows.py
+```

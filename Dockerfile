@@ -11,11 +11,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application's code
 COPY . .
 
-# Make port 8080 available to the world outside this container
+# Create data directory for SQLite (if used)
+RUN mkdir -p data
+
+# Make port 8080 available (Cloud Run expects this port)
 EXPOSE 8080
 
-# Define environment variable for the database URL
-ENV DATABASE_URL=""
+# Set environment variables
+ENV PORT=8080
+ENV PYTHONUNBUFFERED=1
 
-# Run app.py when the container launches using a production-ready server
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "2", "--worker-class", "uvicorn.workers.UvicornWorker", "app:app"]
+# Run app.py with gunicorn using eventlet for SocketIO support
+CMD exec gunicorn --bind :$PORT --workers 1 --worker-class eventlet --timeout 120 app:app
