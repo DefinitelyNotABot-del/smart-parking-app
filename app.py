@@ -271,6 +271,7 @@ def logout_user():
 @app.route('/api/smart-search', methods=['POST'])
 async def smart_search_route():
     user_request = request.get_json().get('user_request')
+    app.logger.info(f"Smart search request: {user_request}")
     
     cursor = get_cursor()
     cursor.execute("SELECT s.spot_id, l.location, s.type, l.latitude, l.longitude FROM spots s JOIN lots l ON s.lot_id = l.lot_id WHERE s.status = 'available'")
@@ -281,12 +282,16 @@ async def smart_search_route():
         available_spots.append({'spot_id': spot_id, 'location': row['location'], 'type': row['type']})
         spot_details[spot_id] = {'latitude': row['latitude'], 'longitude': row['longitude']}
 
+    app.logger.info(f"Found {len(available_spots)} available spots")
+
     if not available_spots:
         return jsonify({"message": "No available spots."})
 
     result = await ai_smart_search(user_request, available_spots)
+    app.logger.info(f"AI search result: {result}")
     
     if 'error' in result:
+        app.logger.error(f"Smart search error: {result['error']}")
         return jsonify(result), 500
 
     returned_spot_id = str(result.get('spot_id')) if result.get('spot_id') is not None else None
@@ -473,8 +478,38 @@ def health_check():
     return jsonify({
         "status": "healthy",
         "database": "connected" if os.path.exists(DB_FILE) else "not_initialized",
-        "gemini_api": "configured" if os.getenv('GEMINI_API_KEY') else "not_configured"
+        "gemini_api": "configured" if os.getenv('GEMINI_API_KEY') else "not_configured",
+        "gemini_key_length": len(os.getenv('GEMINI_API_KEY', '')) if os.getenv('GEMINI_API_KEY') else 0
     })
+
+@app.route('/api/test-gemini', methods=['GET'])
+async def test_gemini():
+    """Test Gemini API directly"""
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return jsonify({"error": "GEMINI_API_KEY not configured"}), 500
+    
+    try:
+        if genai is None:
+            return jsonify({"error": "google-generativeai not installed"}), 500
+            
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        test_prompt = "Say 'Hello, I am working!' in JSON format with a key 'message'"
+        response = await model.generate_content_async(test_prompt)
+        
+        return jsonify({
+            "success": True,
+            "raw_response": response.text,
+            "api_key_prefix": api_key[:10] + "..." if len(api_key) > 10 else "too_short"
+        })
+    except Exception as e:
+        return jsonify({
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "api_key_prefix": api_key[:10] + "..." if len(api_key) > 10 else "too_short"
+        }), 500
 
 if __name__ == '__main__':
     with app.app_context():
