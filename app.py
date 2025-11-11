@@ -471,7 +471,91 @@ def delete_lot(lot_id):
     db.commit()
     return jsonify({"message": "Lot deleted successfully"})
 
-# ... (spot CRUD routes can be refactored similarly if needed) ...
+# Spot CRUD endpoints
+@app.route('/api/lot/<int:lot_id>/spot', methods=['POST'])
+def add_spot(lot_id):
+    user_id = session.get('user_id')
+    if not user_id: 
+        return jsonify({"message": "Unauthorized"}), 401
+
+    db = get_db()
+    cursor = db.cursor()
+    
+    # Verify lot ownership
+    cursor.execute(f"SELECT user_id FROM lots WHERE lot_id = ?", (lot_id,))
+    lot_owner = cursor.fetchone()
+    if not lot_owner or lot_owner['user_id'] != user_id:
+        return jsonify({"message": "Unauthorized to add spots to this lot"}), 403
+
+    data = request.get_json()
+    spot_type = data.get('type')
+    spot_status = data.get('status', 'available')
+    
+    # Map 'small' to 'motorcycle' for consistency with backend
+    if spot_type == 'small':
+        spot_type = 'motorcycle'
+    
+    cursor.execute(
+        f"INSERT INTO spots (lot_id, type, status) VALUES (?, ?, ?)",
+        (lot_id, spot_type, spot_status)
+    )
+    db.commit()
+    
+    socketio.emit('status_change', {'lot_id': lot_id, 'action': 'spot_added'})
+    return jsonify({"message": "Spot added successfully", "spot_id": cursor.lastrowid})
+
+@app.route('/api/lot/<int:lot_id>/spot/<int:spot_id>', methods=['PUT'])
+def update_spot(lot_id, spot_id):
+    user_id = session.get('user_id')
+    if not user_id: 
+        return jsonify({"message": "Unauthorized"}), 401
+
+    db = get_db()
+    cursor = db.cursor()
+    
+    # Verify lot ownership
+    cursor.execute(f"SELECT user_id FROM lots WHERE lot_id = ?", (lot_id,))
+    lot_owner = cursor.fetchone()
+    if not lot_owner or lot_owner['user_id'] != user_id:
+        return jsonify({"message": "Unauthorized to update spots in this lot"}), 403
+
+    data = request.get_json()
+    spot_type = data.get('type')
+    spot_status = data.get('status')
+    
+    # Map 'small' to 'motorcycle' for consistency with backend
+    if spot_type == 'small':
+        spot_type = 'motorcycle'
+    
+    cursor.execute(
+        f"UPDATE spots SET type = ?, status = ? WHERE spot_id = ? AND lot_id = ?",
+        (spot_type, spot_status, spot_id, lot_id)
+    )
+    db.commit()
+    
+    socketio.emit('status_change', {'lot_id': lot_id, 'spot_id': spot_id, 'action': 'spot_updated'})
+    return jsonify({"message": "Spot updated successfully"})
+
+@app.route('/api/lot/<int:lot_id>/spot/<int:spot_id>', methods=['DELETE'])
+def delete_spot(lot_id, spot_id):
+    user_id = session.get('user_id')
+    if not user_id: 
+        return jsonify({"message": "Unauthorized"}), 401
+
+    db = get_db()
+    cursor = db.cursor()
+    
+    # Verify lot ownership
+    cursor.execute(f"SELECT user_id FROM lots WHERE lot_id = ?", (lot_id,))
+    lot_owner = cursor.fetchone()
+    if not lot_owner or lot_owner['user_id'] != user_id:
+        return jsonify({"message": "Unauthorized to delete spots in this lot"}), 403
+
+    cursor.execute(f"DELETE FROM spots WHERE spot_id = ? AND lot_id = ?", (spot_id, lot_id))
+    db.commit()
+    
+    socketio.emit('status_change', {'lot_id': lot_id, 'spot_id': spot_id, 'action': 'spot_deleted'})
+    return jsonify({"message": "Spot deleted successfully"})
 
 @app.route('/api/validate-booking/<spot_id>')
 def validate_booking(spot_id):

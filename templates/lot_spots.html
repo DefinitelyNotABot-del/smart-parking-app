@@ -92,6 +92,13 @@
                 loadSpots(lotId);
             });
 
+            // Reset form when modal is closed
+            $('#spotModal').on('hidden.bs.modal', function () {
+                $('#spotForm')[0].reset();
+                $('#spotId').val('');
+                $('.modal-title').text('Add/Edit Spot');
+            });
+
             $('#spotForm').submit(function(e) {
                 e.preventDefault();
                 const spotId = $('#spotId').val();
@@ -105,9 +112,16 @@
                     method: method,
                     contentType: 'application/json',
                     data: JSON.stringify({ type: type, status: status }),
-                    success: function() {
+                    success: function(response) {
+                        console.log('Spot saved successfully:', response);
                         loadSpots(lotId);
                         $('#spotModal').modal('hide');
+                        $('#spotForm')[0].reset();
+                        $('#spotId').val('');
+                    },
+                    error: function(xhr, status, error) {
+                        console.error('Error saving spot:', xhr.responseText);
+                        alert('Failed to save spot: ' + (xhr.responseJSON?.message || error));
                     }
                 });
             });
