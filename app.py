@@ -11,6 +11,7 @@ import json
 from flask_socketio import SocketIO
 import logging
 import click
+from nlp_parser import parser as nlp_parser
 
 # --- App Initialization ---
 logging.basicConfig(level=logging.INFO)
@@ -287,12 +288,13 @@ def logout_user():
     return jsonify({"message": "Logout successful"})
 
 @app.route('/api/smart-search', methods=['POST'])
-async def smart_search_route():
-    """AI-powered natural language parking search with fallback"""
-    import asyncio
+def smart_search_route():
+    """Natural language parking search - understands context without hallucinating"""
+    user_request = request.get_json().get('user_request', '').strip()
+    app.logger.info(f"Smart search request: '{user_request}'")
     
-    user_request = request.get_json().get('user_request', '')
-    app.logger.info(f"Smart search request: {user_request}")
+    if not user_request:
+        return jsonify({"message": "Please enter a search query"}), 400
     
     cursor = get_cursor()
     cursor.execute("SELECT s.spot_id, l.location, s.type, l.latitude, l.longitude FROM spots s JOIN lots l ON s.lot_id = l.lot_id WHERE s.status = 'available'")
@@ -307,72 +309,20 @@ async def smart_search_route():
             'longitude': row['longitude']
         })
 
-    app.logger.info(f"Found {len(available_spots)} available spots")
+    app.logger.info(f"Found {len(available_spots)} available spots: {[s['location'] for s in available_spots]}")
 
     if not available_spots:
-        return jsonify({"message": "No available spots found."})
+        return jsonify({"message": "No available parking spots found. All spots are currently occupied."}), 404
 
-    # Try AI search with 10 second timeout
-    try:
-        result = await asyncio.wait_for(
-            ai_smart_search(user_request, available_spots),
-            timeout=10.0
-        )
-        
-        if 'error' not in result:
-            # AI succeeded - add coordinates
-            spot_id = str(result.get('spot_id'))
-            matching_spot = next((s for s in available_spots if s['spot_id'] == spot_id), available_spots[0])
-            result['latitude'] = matching_spot['latitude']
-            result['longitude'] = matching_spot['longitude']
-            result['spot_id'] = matching_spot['spot_id']
-            app.logger.info(f"AI search successful: {result}")
-            return jsonify(result)
-    except asyncio.TimeoutError:
-        app.logger.warning("AI search timed out after 10 seconds, using fallback")
-    except Exception as e:
-        app.logger.error(f"AI search error: {e}")
+    # Use smart local NLP parser - no API, no hallucinations!
+    result = nlp_parser.find_best_match(user_request, available_spots)
     
-    # Fallback: keyword-based search if AI fails/times out
-    user_lower = user_request.lower()
-    best_spot = None
-    explanation = "AI unavailable - using smart keyword match"
+    app.logger.info(f"NLP match result: {result}")
     
-    # Match vehicle type
-    if 'car' in user_lower or 'sedan' in user_lower or 'auto' in user_lower:
-        best_spot = next((s for s in available_spots if s['type'] == 'car'), None)
-        explanation = "Car parking spot (keyword match)"
-    elif 'bike' in user_lower or 'motorcycle' in user_lower or 'two wheeler' in user_lower:
-        best_spot = next((s for s in available_spots if s['type'] == 'bike'), None)
-        explanation = "Bike parking spot (keyword match)"
-    elif 'truck' in user_lower or 'large' in user_lower or 'heavy' in user_lower:
-        best_spot = next((s for s in available_spots if s['type'] == 'truck'), None)
-        explanation = "Truck parking spot (keyword match)"
+    # Check if we found a match
+    if 'error' in result:
+        return jsonify(result), 404
     
-    # If no type match, use first available
-    if not best_spot:
-        best_spot = available_spots[0]
-        explanation = f"Nearest available {best_spot['type']} spot"
-    
-    result = {
-        'spot_id': best_spot['spot_id'],
-        'explanation': explanation,
-        'latitude': best_spot['latitude'],
-        'longitude': best_spot['longitude']
-    }
-    
-    app.logger.info(f"Fallback search result: {result}")
-    return jsonify(result)
-
-    returned_spot_id = str(result.get('spot_id')) if result.get('spot_id') is not None else None
-    if returned_spot_id not in {str(s['spot_id']) for s in available_spots}:
-        fallback_spot_id = available_spots[0]['spot_id']
-        result['spot_id'] = fallback_spot_id
-        result['explanation'] = f"(AI suggested an invalid spot, so we picked one for you) {result.get('explanation', '')}"
-
-    if 'spot_id' in result and result['spot_id'] in spot_details:
-        result.update(spot_details[result['spot_id']])
-
     return jsonify(result)
 
 @app.route('/api/book-spot', methods=['POST'])
