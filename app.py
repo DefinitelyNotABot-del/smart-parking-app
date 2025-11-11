@@ -287,45 +287,67 @@ def logout_user():
     return jsonify({"message": "Logout successful"})
 
 @app.route('/api/smart-search', methods=['POST'])
-def smart_search_route():
-    """Smart search with simple keyword matching - fast and reliable"""
-    user_request = request.get_json().get('user_request', '').lower()
+async def smart_search_route():
+    """AI-powered natural language parking search with fallback"""
+    import asyncio
+    
+    user_request = request.get_json().get('user_request', '')
     app.logger.info(f"Smart search request: {user_request}")
     
     cursor = get_cursor()
     cursor.execute("SELECT s.spot_id, l.location, s.type, l.latitude, l.longitude FROM spots s JOIN lots l ON s.lot_id = l.lot_id WHERE s.status = 'available'")
     
-    available_spots, spot_details = [], {}
+    available_spots = []
     for row in cursor.fetchall():
-        spot_id = str(row['spot_id'])
         available_spots.append({
-            'spot_id': spot_id, 
+            'spot_id': str(row['spot_id']),
             'location': row['location'], 
             'type': row['type'],
-            'lat': row['latitude'],
-            'lon': row['longitude']
+            'latitude': row['latitude'],
+            'longitude': row['longitude']
         })
-        spot_details[spot_id] = {'latitude': row['latitude'], 'longitude': row['longitude']}
 
     app.logger.info(f"Found {len(available_spots)} available spots")
 
     if not available_spots:
-        return jsonify({"message": "No available spots."})
+        return jsonify({"message": "No available spots found."})
 
-    # Simple keyword-based search (works instantly, no API needed)
-    best_spot = None
-    explanation = "Based on your request"
+    # Try AI search with 10 second timeout
+    try:
+        result = await asyncio.wait_for(
+            ai_smart_search(user_request, available_spots),
+            timeout=10.0
+        )
+        
+        if 'error' not in result:
+            # AI succeeded - add coordinates
+            spot_id = str(result.get('spot_id'))
+            matching_spot = next((s for s in available_spots if s['spot_id'] == spot_id), available_spots[0])
+            result['latitude'] = matching_spot['latitude']
+            result['longitude'] = matching_spot['longitude']
+            result['spot_id'] = matching_spot['spot_id']
+            app.logger.info(f"AI search successful: {result}")
+            return jsonify(result)
+    except asyncio.TimeoutError:
+        app.logger.warning("AI search timed out after 10 seconds, using fallback")
+    except Exception as e:
+        app.logger.error(f"AI search error: {e}")
     
-    # Look for vehicle type keywords
-    if 'car' in user_request or 'sedan' in user_request:
+    # Fallback: keyword-based search if AI fails/times out
+    user_lower = user_request.lower()
+    best_spot = None
+    explanation = "AI unavailable - using smart keyword match"
+    
+    # Match vehicle type
+    if 'car' in user_lower or 'sedan' in user_lower or 'auto' in user_lower:
         best_spot = next((s for s in available_spots if s['type'] == 'car'), None)
-        explanation = "Found a car parking spot for you"
-    elif 'bike' in user_request or 'motorcycle' in user_request or 'two wheeler' in user_request:
+        explanation = "Car parking spot (keyword match)"
+    elif 'bike' in user_lower or 'motorcycle' in user_lower or 'two wheeler' in user_lower:
         best_spot = next((s for s in available_spots if s['type'] == 'bike'), None)
-        explanation = "Found a bike parking spot for you"
-    elif 'truck' in user_request or 'large' in user_request:
+        explanation = "Bike parking spot (keyword match)"
+    elif 'truck' in user_lower or 'large' in user_lower or 'heavy' in user_lower:
         best_spot = next((s for s in available_spots if s['type'] == 'truck'), None)
-        explanation = "Found a truck parking spot for you"
+        explanation = "Truck parking spot (keyword match)"
     
     # If no type match, use first available
     if not best_spot:
@@ -335,11 +357,11 @@ def smart_search_route():
     result = {
         'spot_id': best_spot['spot_id'],
         'explanation': explanation,
-        'latitude': best_spot['lat'],
-        'longitude': best_spot['lon']
+        'latitude': best_spot['latitude'],
+        'longitude': best_spot['longitude']
     }
     
-    app.logger.info(f"Quick search result: {result}")
+    app.logger.info(f"Fallback search result: {result}")
     return jsonify(result)
 
     returned_spot_id = str(result.get('spot_id')) if result.get('spot_id') is not None else None
