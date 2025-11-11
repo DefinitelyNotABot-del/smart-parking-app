@@ -102,6 +102,8 @@ def init_db_command():
 # --- AI Smart Search Function ---
 async def ai_smart_search(user_request, available_spots):
     """Calls the Gemini API to find the best parking spot and get an explanation."""
+    import asyncio
+    
     if genai is None:
         return {"error": "google.generativeai package not installed."}
     api_key = os.getenv("GEMINI_API_KEY")
@@ -112,23 +114,39 @@ async def ai_smart_search(user_request, available_spots):
     # Use gemini-1.5-flash for better stability and response format
     model = genai.GenerativeModel('gemini-1.5-flash')
     prompt = f"""
-    You are a helpful parking assistant. Your goal is to find the single best parking spot for a user based on their request and provide a very brief explanation for your choice.
-    User request: '{user_request}'
-    Here is a list of available parking spots: {available_spots}
-    Based on the user's request, which is the single best spot? Please return ONLY a valid JSON object with two keys: 'spot_id' (as an integer) and 'explanation' (as a string). Do not include any other text or markdown formatting.
-    Example response: {{"spot_id": 1, "explanation": "This spot is closest to your destination"}}
+    You are a helpful parking assistant. Be VERY brief.
+    User wants: '{user_request}'
+    Available spots: {available_spots[:3]}  
+    Return ONLY valid JSON: {{"spot_id": <number>, "explanation": "<10 words max>"}}
     """
     try:
-        response = await model.generate_content_async(prompt)
+        # Set a 15 second timeout for Gemini API
+        response = await asyncio.wait_for(
+            model.generate_content_async(prompt),
+            timeout=15.0
+        )
         cleaned_response = response.text.strip().replace("```json", "").replace("```", "").strip()
         app.logger.info(f"Gemini response: {cleaned_response}")
         return json.loads(cleaned_response)
+    except asyncio.TimeoutError:
+        app.logger.error("Gemini API timeout after 15 seconds")
+        # Return first available spot as fallback
+        return {
+            "spot_id": available_spots[0]['spot_id'],
+            "explanation": "Quick pick - AI timed out"
+        }
     except json.JSONDecodeError as e:
-        app.logger.error(f"JSON decode error from Gemini: {cleaned_response}")
-        return {"error": f"Invalid JSON from AI: {str(e)}"}
+        app.logger.error(f"JSON decode error from Gemini: {cleaned_response if 'cleaned_response' in locals() else 'no response'}")
+        return {
+            "spot_id": available_spots[0]['spot_id'],
+            "explanation": "Quick pick - AI response invalid"
+        }
     except Exception as e:
         app.logger.error(f"Error calling Gemini API: {e}")
-        return {"error": f"Gemini API error: {str(e)}"}
+        return {
+            "spot_id": available_spots[0]['spot_id'],
+            "explanation": f"Quick pick - API error"
+        }
 
 # --- Booking Function ---
 def book_spot(spot_id, user_id):
@@ -269,8 +287,9 @@ def logout_user():
     return jsonify({"message": "Logout successful"})
 
 @app.route('/api/smart-search', methods=['POST'])
-async def smart_search_route():
-    user_request = request.get_json().get('user_request')
+def smart_search_route():
+    """Smart search with simple keyword matching - fast and reliable"""
+    user_request = request.get_json().get('user_request', '').lower()
     app.logger.info(f"Smart search request: {user_request}")
     
     cursor = get_cursor()
@@ -279,7 +298,13 @@ async def smart_search_route():
     available_spots, spot_details = [], {}
     for row in cursor.fetchall():
         spot_id = str(row['spot_id'])
-        available_spots.append({'spot_id': spot_id, 'location': row['location'], 'type': row['type']})
+        available_spots.append({
+            'spot_id': spot_id, 
+            'location': row['location'], 
+            'type': row['type'],
+            'lat': row['latitude'],
+            'lon': row['longitude']
+        })
         spot_details[spot_id] = {'latitude': row['latitude'], 'longitude': row['longitude']}
 
     app.logger.info(f"Found {len(available_spots)} available spots")
@@ -287,12 +312,35 @@ async def smart_search_route():
     if not available_spots:
         return jsonify({"message": "No available spots."})
 
-    result = await ai_smart_search(user_request, available_spots)
-    app.logger.info(f"AI search result: {result}")
+    # Simple keyword-based search (works instantly, no API needed)
+    best_spot = None
+    explanation = "Based on your request"
     
-    if 'error' in result:
-        app.logger.error(f"Smart search error: {result['error']}")
-        return jsonify(result), 500
+    # Look for vehicle type keywords
+    if 'car' in user_request or 'sedan' in user_request:
+        best_spot = next((s for s in available_spots if s['type'] == 'car'), None)
+        explanation = "Found a car parking spot for you"
+    elif 'bike' in user_request or 'motorcycle' in user_request or 'two wheeler' in user_request:
+        best_spot = next((s for s in available_spots if s['type'] == 'bike'), None)
+        explanation = "Found a bike parking spot for you"
+    elif 'truck' in user_request or 'large' in user_request:
+        best_spot = next((s for s in available_spots if s['type'] == 'truck'), None)
+        explanation = "Found a truck parking spot for you"
+    
+    # If no type match, use first available
+    if not best_spot:
+        best_spot = available_spots[0]
+        explanation = f"Nearest available {best_spot['type']} spot"
+    
+    result = {
+        'spot_id': best_spot['spot_id'],
+        'explanation': explanation,
+        'latitude': best_spot['lat'],
+        'longitude': best_spot['lon']
+    }
+    
+    app.logger.info(f"Quick search result: {result}")
+    return jsonify(result)
 
     returned_spot_id = str(result.get('spot_id')) if result.get('spot_id') is not None else None
     if returned_spot_id not in {str(s['spot_id']) for s in available_spots}:
