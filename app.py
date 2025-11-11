@@ -461,7 +461,20 @@ def reset_database():
     else:
         return jsonify({"message": "This action is not allowed in the current environment."}), 403
 
+@app.route('/health')
+def health_check():
+    """Health check endpoint for Azure"""
+    return jsonify({
+        "status": "healthy",
+        "database": "connected" if os.path.exists(DB_FILE) else "not_initialized",
+        "gemini_api": "configured" if os.getenv('GEMINI_API_KEY') else "not_configured"
+    })
+
 if __name__ == '__main__':
     with app.app_context():
         init_db()
     socketio.run(app, debug=True)
+
+# Initialize database on startup (for production)
+with app.app_context():
+    init_db()
