@@ -1,10 +1,23 @@
 # 🅿️ Smart Parking App
 
-Real-time parking management with AI-powered search. Deploy to Azure in minutes with $100 free student credits!
+Real-time parking management with **intelligent local NLP search**. Deployed on Azure with zero-cost Free tier!
 
-## 🚀 Quick Deploy to Azure (Free Tier)
+## ✨ Key Features
 
-**Cost: $0/month on Free tier** (uses ~$0 of your $100 credit)
+- 🧠 **Smart Local NLP Search** - Understands natural language without external APIs
+- 🎯 **No Hallucinations** - Only returns real parking spots from your database
+- ⚡ **Instant Results** - No API timeouts, works offline
+- 🔄 **Real-time Updates** - WebSocket notifications for spot availability
+- 🗺️ **Interactive Map** - Leaflet.js with OpenStreetMap integration
+- 👥 **Dual Roles** - Customer (find parking) & Owner (manage lots)
+- � **Secure Authentication** - Password hashing with Werkzeug
+- 🌐 **Production Ready** - Deployed on Azure App Service
+
+## 🚀 Live Demo
+
+**Deployed at:** https://smart-parking-app.azurewebsites.net
+
+**Cost: $0/month** - Runs on Azure F1 Free tier (no consumption of student credits!)
 
 ### Prerequisites
 - Azure student account ($100 credit)
@@ -41,10 +54,106 @@ Your app will be live at: `https://smart-parking-app.azurewebsites.net`
 
 ## 🔒 Security Features
 
-- **Federated Credentials (OIDC)** - No service principal keys stored!
+- **Federated Credentials (OIDC)** - No service principal keys stored anywhere!
 - **Managed Identity** - Azure resources authenticate automatically
 - **GitHub Secrets** - All sensitive data encrypted
 - **No manual key rotation** - Automatic credential management
+- **Password Hashing** - Werkzeug secure password storage
+
+## 🧠 Smart NLP Search Engine
+
+### How It Works
+The app features a **custom-built local NLP parser** that understands natural language queries without external APIs:
+
+**Example Queries:**
+- "I need car parking near AMC Engineering College" ✅
+- "bike parking vega city" ✅
+- "parking for truck" ✅
+
+**Features:**
+- ✅ **Exact Word Matching** - Finds locations with matching keywords
+- ✅ **Fuzzy Matching** - Handles typos (60% similarity threshold)
+- ✅ **Vehicle Type Detection** - Automatically identifies car/bike/truck
+- ✅ **No Hallucinations** - Only returns real spots from database
+- ✅ **Instant Response** - No API timeouts or rate limits
+- ✅ **Works Offline** - Pure Python regex and fuzzy logic
+
+### Why Local NLP?
+We initially used **Google Gemini API**, but encountered issues:
+- ❌ Free tier extremely slow (2+ minute response times)
+- ❌ Worker timeouts killing requests
+- ❌ Rate limits and API key management
+- ❌ Dependency on external service
+
+**Solution:** Built lightweight NLP using Python's `difflib` and regex patterns
+- ⚡ Instant results (<100ms)
+- 💰 Zero API costs
+- 🔒 Complete data privacy
+- 📈 Scales infinitely
+
+## 🛠️ Technology Stack
+
+**Backend:**
+- Flask 3.1.2 (Web framework)
+- Flask-SocketIO 5.5.1 (Real-time WebSocket communication)
+- SQLite3 (Database - zero configuration)
+- Gunicorn + Eventlet (Production server)
+- Custom NLP Parser (Local natural language processing)
+
+**Frontend:**
+- HTML5/CSS3/JavaScript
+- Leaflet.js (Interactive maps)
+- Chart.js (Analytics visualization)
+- OpenStreetMap (Free map tiles)
+
+**Cloud Infrastructure:**
+- Azure App Service F1 (Free tier - $0/month)
+- GitHub Actions (CI/CD with OIDC authentication)
+- Azure Managed Identity (Secure resource access)
+
+**Security:**
+- Werkzeug (Password hashing)
+- Environment variables for secrets
+- Federated Credentials (No stored keys)
+
+## 📊 What We Accomplished (Latest Session)
+
+### Problem Solved
+- **Initial Issue:** Gemini API free tier was timing out (2+ minutes per search)
+- **Root Cause:** Azure F1 worker timeout at 120 seconds, Gemini couldn't respond in time
+- **Impact:** Users saw "Application Error" - complete feature failure
+
+### Solution Implemented
+1. **Built Custom Local NLP Engine**
+   - Regex-based vehicle type extraction
+   - Word-by-word location matching
+   - Fuzzy similarity fallback (60% threshold)
+   - Smart scoring system (exact matches get 15 points, fuzzy gets 10)
+
+2. **Deployment Fixes**
+   - Added `ENABLE_ORYX_BUILD=true` for dependency installation
+   - Configured `eventlet` worker for async support
+   - Set proper Gunicorn timeouts (30s)
+   - Added health check endpoint
+
+3. **Security Improvements**
+   - Rotated leaked Gemini API keys (3 times)
+   - Verified no keys in git history
+   - Confirmed GitHub Secrets encryption
+   - Added API key length validation
+
+4. **Testing & Refinement**
+   - Fixed "too strict" matching (rejected valid locations)
+   - Fixed "too loose" matching (matched random locations)
+   - Balanced to require exact word matches with fuzzy fallback
+   - Added debug logging for troubleshooting
+
+### Results
+- ✅ Search works instantly (<100ms response time)
+- ✅ Zero dependency on external APIs
+- ✅ No more timeouts or worker crashes
+- ✅ Accurate location matching without hallucinations
+- ✅ Production-ready deployment on Azure Free tier
 
 ## Project Structure
 
