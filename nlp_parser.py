@@ -74,7 +74,15 @@ class ParkingNLPParser:
         location_query = self.extract_location(user_query)
         
         # Log what we extracted
-        print(f"Extracted - Vehicle: {vehicle_type}, Location: {location_query}")
+        print(f"Extracted - Vehicle: {vehicle_type}, Location: '{location_query}'")
+        print(f"Available locations: {[s['location'] for s in available_spots]}")
+        
+        # If no location extracted, try using the whole query
+        if not location_query:
+            location_query = user_query_lower
+            # Remove vehicle type words
+            for keywords in self.vehicle_patterns.values():
+                location_query = re.sub(keywords, '', location_query).strip()
         
         # Score each spot
         best_spot = None
@@ -91,32 +99,43 @@ class ParkingNLPParser:
                     score += 10
                     reasons.append(f"{vehicle_type} parking")
                 else:
-                    score -= 3  # Penalty for wrong type
+                    score -= 2  # Small penalty for wrong type
+            else:
+                # No vehicle type specified, use first available
+                score += 2
             
-            # Match location (VERY HIGH priority - up to 20 points)
+            # Match location (VERY HIGH priority - up to 30 points)
             if location_query:
-                # Check if any word in location query matches spot location
                 location_lower = spot['location'].lower()
-                query_words = location_query.split()
                 
+                # Split both query and location into words
+                query_words = [w for w in location_query.split() if len(w) > 2]
+                location_words = location_lower.split()
+                
+                # Count exact word matches
                 word_matches = 0
-                for word in query_words:
-                    if len(word) > 2:  # Skip short words
-                        if word in location_lower:
+                for qword in query_words:
+                    for lword in location_words:
+                        if qword in lword or lword in qword:
                             word_matches += 1
+                            break
                 
                 if word_matches > 0:
-                    # Strong match for word presence
-                    word_score = word_matches * 7
+                    # Strong match - give high score
+                    word_score = word_matches * 10
                     score += word_score
                     reasons.append(f"at {spot['location']}")
+                    print(f"Matched '{location_query}' to '{spot['location']}' with {word_matches} word matches (score: {word_score})")
                 else:
-                    # Fuzzy match as fallback
+                    # Try fuzzy match as fallback
                     similarity = self.fuzzy_match(location_query, location_lower)
-                    if similarity > 0.4:
-                        fuzzy_score = similarity * 10
+                    if similarity > 0.3:  # Lower threshold
+                        fuzzy_score = similarity * 15
                         score += fuzzy_score
                         reasons.append(f"near {spot['location']}")
+                        print(f"Fuzzy matched '{location_query}' to '{spot['location']}' (similarity: {similarity:.2f}, score: {fuzzy_score})")
+            
+            print(f"Spot '{spot['location']}' ({spot['type']}): score = {score}")
             
             # Update best match
             if score > best_score:
@@ -124,19 +143,13 @@ class ParkingNLPParser:
                 best_spot = spot
                 best_reasons = reasons
         
-        # If no match at all, return error
+        # If no match at all, return first available
         if not best_spot:
-            return {
-                'error': 'No spots available',
-                'message': 'No parking spots found matching your criteria'
-            }
+            best_spot = available_spots[0]
+            best_reasons = [f"Available {best_spot['type']} spot"]
+            best_score = 1
         
-        # If location was requested but score is too low, return error
-        if location_query and best_score < 3:
-            return {
-                'error': 'Location not found',
-                'message': f'No parking spots found near "{location_query}". Available locations: {", ".join(set([s["location"] for s in available_spots[:3]]))}'
-            }
+        print(f"Best match: {best_spot['location']} with score {best_score}")
         
         # Generate explanation
         if best_reasons:
