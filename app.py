@@ -109,20 +109,26 @@ async def ai_smart_search(user_request, available_spots):
         return {"error": "GEMINI_API_KEY not found."}
 
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-pro-latest')
+    # Use gemini-1.5-flash for better stability and response format
+    model = genai.GenerativeModel('gemini-1.5-flash')
     prompt = f"""
     You are a helpful parking assistant. Your goal is to find the single best parking spot for a user based on their request and provide a very brief explanation for your choice.
     User request: '{user_request}'
     Here is a list of available parking spots: {available_spots}
-    Based on the user's request, which is the single best spot? Please return a JSON object with two keys: 'spot_id' and 'explanation'.
+    Based on the user's request, which is the single best spot? Please return ONLY a valid JSON object with two keys: 'spot_id' (as an integer) and 'explanation' (as a string). Do not include any other text or markdown formatting.
+    Example response: {{"spot_id": 1, "explanation": "This spot is closest to your destination"}}
     """
     try:
         response = await model.generate_content_async(prompt)
         cleaned_response = response.text.strip().replace("```json", "").replace("```", "").strip()
+        app.logger.info(f"Gemini response: {cleaned_response}")
         return json.loads(cleaned_response)
+    except json.JSONDecodeError as e:
+        app.logger.error(f"JSON decode error from Gemini: {cleaned_response}")
+        return {"error": f"Invalid JSON from AI: {str(e)}"}
     except Exception as e:
         app.logger.error(f"Error calling Gemini API: {e}")
-        return {"error": str(e)}
+        return {"error": f"Gemini API error: {str(e)}"}
 
 # --- Booking Function ---
 def book_spot(spot_id, user_id):
