@@ -40,7 +40,6 @@ Add these 5 secrets from the script output:
 - `AZURE_CLIENT_ID`
 - `AZURE_TENANT_ID`
 - `AZURE_SUBSCRIPTION_ID`
-- `GEMINI_API_KEY` (from Google AI Studio)
 - `FLASK_SECRET_KEY` (generate: `python -c "import secrets; print(secrets.token_hex(32))"`)
 
 3. **Deploy:**
@@ -68,12 +67,11 @@ The app features a **custom-built local NLP parser** that understands natural la
 **Example Queries:**
 - "I need car parking near AMC Engineering College" ✅
 - "bike parking vega city" ✅
-- "parking for truck" ✅
 
 **Features:**
 - ✅ **Exact Word Matching** - Finds locations with matching keywords
 - ✅ **Fuzzy Matching** - Handles typos (60% similarity threshold)
-- ✅ **Vehicle Type Detection** - Automatically identifies car/bike/truck
+- ✅ **Vehicle Type Detection** - Automatically identifies car/bike
 - ✅ **No Hallucinations** - Only returns real spots from database
 - ✅ **Instant Response** - No API timeouts or rate limits
 - ✅ **Works Offline** - Pure Python regex and fuzzy logic
@@ -166,7 +164,6 @@ We initially used **Google Gemini API**, but encountered issues:
     - `lot_spots.html`: Frontend for owners to manage spots within a specific lot.
     - `role.html`: Page for users to select their role (Customer or Owner).
 - `requirements.txt`: Lists all Python dependencies.
-- `.env`: Environment variables (e.g., `GEMINI_API_KEY`).
 
 ## Setup Instructions
 
@@ -206,13 +203,6 @@ Install all required Python packages using `pip`:
 pip install -r requirements.txt
 ```
 
-### 5. Set Up Environment Variables
-
-Create a `.env` file in the root directory of the project and add your `GEMINI_API_KEY`. You can obtain a GEMINI_API_KEY from the Google AI Studio.
-
-```
-GEMINI_API_KEY='your_gemini_api_key_here'
-```
 
 ### 6. Run the Application
 
