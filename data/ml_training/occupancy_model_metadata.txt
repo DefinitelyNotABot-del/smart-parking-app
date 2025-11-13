@@ -1,0 +1,48 @@
+OCCUPANCY PREDICTION MODEL
+======================================================================
+
+Trained: 2025-11-13 18:47:02
+Algorithm: Random Forest Regressor
+Training samples: 17,376
+Test samples: 4,344
+
+PERFORMANCE METRICS
+----------------------------------------------------------------------
+Test MAE:  17.03%
+Test RMSE: 21.20%
+Test R²:   0.5210
+
+FEATURES
+----------------------------------------------------------------------
+  - lot_id
+  - hour
+  - day_of_week
+  - month
+  - day_of_month
+  - week_of_year
+  - is_weekend
+  - is_holiday
+  - is_rush_hour
+  - nearby_event
+  - is_month_start
+  - is_month_end
+  - weather_encoded
+  - temperature
+  - total_spots
+  - hour_sin
+  - hour_cos
+  - day_sin
+  - day_cos
+
+TOP 10 FEATURE IMPORTANCE
+----------------------------------------------------------------------
+  total_spots................... 0.2451
+  hour.......................... 0.1095
+  hour_cos...................... 0.0993
+  temperature................... 0.0875
+  lot_id........................ 0.0823
+  day_of_week................... 0.0815
+  day_sin....................... 0.0795
+  day_of_month.................. 0.0518
+  week_of_year.................. 0.0359
+  is_weekend.................... 0.0283

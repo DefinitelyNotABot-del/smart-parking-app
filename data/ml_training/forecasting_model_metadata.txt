@@ -1,0 +1,40 @@
+TIME-SERIES FORECASTING MODEL
+======================================================================
+
+Trained: 2025-11-13 18:45:42
+Algorithm: Gradient Boosting Regressor (Time-Series)
+Training samples: 18,000
+Test samples: 3,600
+
+PERFORMANCE METRICS
+----------------------------------------------------------------------
+Test MAE:  12.33%
+Test RMSE: 15.88%
+Test R²:   0.3354
+
+FEATURES (Time-Series)
+----------------------------------------------------------------------
+Lag Features: 1h, 2h, 3h, 6h, 12h, 24h
+Moving Averages: 3h, 6h, 12h, 24h
+Rolling Averages: 7-day, 30-day
+Exponential Weighted MA: 12-hour span
+Seasonal Components: hour, day, month (cyclical)
+Trend Component: linear
+
+TOP 15 FEATURE IMPORTANCE
+----------------------------------------------------------------------
+  occupancy_ma_3h.................... 0.3506
+  rolling_avg_30days................. 0.0808
+  hour_cos........................... 0.0792
+  rolling_avg_7days.................. 0.0636
+  hour............................... 0.0558
+  hour_sin........................... 0.0398
+  day_of_week........................ 0.0383
+  total_spots........................ 0.0381
+  day_sin............................ 0.0328
+  occupancy_ma_12h................... 0.0319
+  is_weekend......................... 0.0249
+  occupancy_ma_24h................... 0.0172
+  trend_component.................... 0.0167
+  occupancy_lag_12h.................. 0.0157
+  lot_id............................. 0.0141

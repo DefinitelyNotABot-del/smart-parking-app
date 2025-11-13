@@ -13,6 +13,9 @@ import logging
 import click
 from datetime import datetime, timedelta
 from nlp_parser import parser as nlp_parser
+import joblib
+import numpy as np
+import pandas as pd
 
 # --- App Initialization ---
 logging.basicConfig(level=logging.INFO)
@@ -33,6 +36,43 @@ DEFAULT_PRICING = {
 
 TIME_FORMAT = "%Y-%m-%dT%H:%M"
 
+# --- Demo Account Configuration ---
+DEMO_EMAILS = [
+    'demo.owner@smartparking.com',
+    'demo.customer@smartparking.com'
+]
+DEMO_DB_PATH = 'demo.db'
+REGULAR_DB_PATH = 'parking.db'
+
+def is_demo_account(email):
+    """Check if email is a demo account with pre-generated data"""
+    return email.lower() in [e.lower() for e in DEMO_EMAILS]
+
+def get_db_path():
+    """Get the appropriate database path based on current user"""
+    if session.get('is_demo'):
+        return DEMO_DB_PATH
+    return REGULAR_DB_PATH
+
+# --- AI Model Loading ---
+ML_MODELS_DIR = "data/ml_training"
+AI_MODELS = {}
+
+def load_ai_models():
+    """Load all trained ML models at startup"""
+    global AI_MODELS
+    try:
+        AI_MODELS['occupancy'] = joblib.load(os.path.join(ML_MODELS_DIR, 'occupancy_model.pkl'))
+        AI_MODELS['pricing'] = joblib.load(os.path.join(ML_MODELS_DIR, 'pricing_model.pkl'))
+        AI_MODELS['preference'] = joblib.load(os.path.join(ML_MODELS_DIR, 'preference_model.pkl'))
+        AI_MODELS['preference_scaler'] = joblib.load(os.path.join(ML_MODELS_DIR, 'preference_scaler.pkl'))
+        AI_MODELS['forecasting'] = joblib.load(os.path.join(ML_MODELS_DIR, 'forecasting_model.pkl'))
+        app.logger.info("✓ All AI models loaded successfully")
+        return True
+    except Exception as e:
+        app.logger.warning(f"AI models not loaded: {e}")
+        return False
+
 # --- Database Configuration & Management ---
 DB_FILE = "data/parking.db"
 
@@ -40,8 +80,17 @@ def get_db():
     """Opens a new database connection if there is none yet for the current application context."""
     if 'db' not in g:
         os.makedirs("data", exist_ok=True)
-        g.db = sqlite3.connect(DB_FILE)
+        # Use demo.db for demo accounts, parking.db for regular users
+        # Default to REGULAR_DB_PATH if no session context (e.g., during init)
+        try:
+            db_path = get_db_path() if session.get('is_demo') else REGULAR_DB_PATH
+        except RuntimeError:
+            # Outside request context (e.g., during app startup)
+            db_path = REGULAR_DB_PATH
+        
+        g.db = sqlite3.connect(db_path)
         g.db.row_factory = sqlite3.Row
+        g.db_path = db_path  # Track which DB we're using
     return g.db
 
 @app.teardown_appcontext
@@ -235,54 +284,231 @@ def get_future_bookings(lot_id, spot_id, limit=20):
     return [dict(row) for row in cursor.fetchall()]
 
 
-# --- AI Smart Search Function ---
-async def ai_smart_search(user_request, available_spots):
-    """Calls the Gemini API to find the best parking spot and get an explanation."""
-    import asyncio
-    
-    if genai is None:
-        return {"error": "google.generativeai package not installed."}
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        return {"error": "GEMINI_API_KEY not found."}
+# --- AI Prediction Functions ---
 
-    genai.configure(api_key=api_key)
-    # Use gemini-1.5-flash for better stability and response format
-    model = genai.GenerativeModel('gemini-1.5-flash')
-    prompt = f"""
-    You are a helpful parking assistant. Be VERY brief.
-    User wants: '{user_request}'
-    Available spots: {available_spots[:3]}  
-    Return ONLY valid JSON: {{"spot_id": <number>, "explanation": "<10 words max>"}}
-    """
-    try:
-        # Set a 15 second timeout for Gemini API
-        response = await asyncio.wait_for(
-            model.generate_content_async(prompt),
-            timeout=15.0
-        )
-        cleaned_response = response.text.strip().replace("```json", "").replace("```", "").strip()
-        app.logger.info(f"Gemini response: {cleaned_response}")
-        return json.loads(cleaned_response)
-    except asyncio.TimeoutError:
-        app.logger.error("Gemini API timeout after 15 seconds")
-        # Return first available spot as fallback
-        return {
-            "spot_id": available_spots[0]['spot_id'],
-            "explanation": "Quick pick - AI timed out"
+def predict_occupancy(lot_id, target_datetime=None):
+    """Predict occupancy rate for a parking lot at a specific time"""
+    if 'occupancy' not in AI_MODELS:
+        return None
+    
+    if target_datetime is None:
+        target_datetime = datetime.now()
+    
+    # Get lot capacity
+    cursor = get_cursor()
+    cursor.execute("SELECT COUNT(*) as capacity FROM spots WHERE lot_id = ?", (lot_id,))
+    capacity = cursor.fetchone()['capacity']
+    
+    # Prepare features
+    features = {
+        'lot_id': lot_id,
+        'hour': target_datetime.hour,
+        'day_of_week': target_datetime.weekday(),
+        'month': target_datetime.month,
+        'day_of_month': target_datetime.day,
+        'week_of_year': target_datetime.isocalendar()[1],
+        'is_weekend': int(target_datetime.weekday() >= 5),
+        'is_holiday': 0,  # Could check calendar
+        'is_rush_hour': int((7 <= target_datetime.hour <= 9) or (17 <= target_datetime.hour <= 19)),
+        'nearby_event': 0,  # Could check events
+        'is_month_start': int(target_datetime.day <= 7),
+        'is_month_end': int(target_datetime.day >= 24),
+        'weather_encoded': 0,  # Default to clear
+        'temperature': 25,  # Default temp
+        'total_spots': capacity,
+        'hour_sin': np.sin(2 * np.pi * target_datetime.hour / 24),
+        'hour_cos': np.cos(2 * np.pi * target_datetime.hour / 24),
+        'day_sin': np.sin(2 * np.pi * target_datetime.weekday() / 7),
+        'day_cos': np.cos(2 * np.pi * target_datetime.weekday() / 7)
+    }
+    
+    df = pd.DataFrame([features])
+    prediction = AI_MODELS['occupancy'].predict(df)[0]
+    
+    return {
+        'occupancy_rate': round(prediction, 1),
+        'predicted_available': int(capacity * (1 - prediction/100)),
+        'predicted_occupied': int(capacity * (prediction/100)),
+        'total_capacity': capacity
+    }
+
+def optimize_price(lot_id, spot_type, current_occupancy_rate, base_price):
+    """Recommend optimal price based on demand and occupancy"""
+    if 'pricing' not in AI_MODELS:
+        return base_price
+    
+    now = datetime.now()
+    
+    # Encode spot type
+    spot_type_mapping = {'car': 0, 'bike': 1, 'large': 2, 'motorcycle': 1, 'truck': 2}
+    spot_type_encoded = spot_type_mapping.get(spot_type, 0)
+    
+    # Determine demand level
+    if current_occupancy_rate > 85:
+        demand_encoded = 3  # Critical
+    elif current_occupancy_rate > 65:
+        demand_encoded = 2  # High
+    elif current_occupancy_rate > 40:
+        demand_encoded = 1  # Medium
+    else:
+        demand_encoded = 0  # Low
+    
+    # Estimate metrics
+    bookings_last_hour = int(current_occupancy_rate * 0.15)
+    competitor_avg = base_price * 1.05  # Assume 5% higher competitors
+    conversion_rate = 0.25
+    time_until_full = max(0, int((100 - current_occupancy_rate) * 2))
+    
+    features = {
+        'lot_id': lot_id,
+        'spot_type_encoded': spot_type_encoded,
+        'base_price': base_price,
+        'demand_encoded': demand_encoded,
+        'occupancy_rate': current_occupancy_rate,
+        'bookings_last_hour': bookings_last_hour,
+        'competitor_avg_price': competitor_avg,
+        'hour': now.hour,
+        'day_of_week': now.weekday(),
+        'booking_conversion_rate': conversion_rate,
+        'time_until_full': time_until_full,
+        'hour_sin': np.sin(2 * np.pi * now.hour / 24),
+        'hour_cos': np.cos(2 * np.pi * now.hour / 24),
+        'day_sin': np.sin(2 * np.pi * now.weekday() / 7),
+        'day_cos': np.cos(2 * np.pi * now.weekday() / 7),
+        'price_to_competitor_ratio': base_price / competitor_avg
+    }
+    
+    df = pd.DataFrame([features])
+    optimal_price = AI_MODELS['pricing'].predict(df)[0]
+    
+    return round(optimal_price, 2)
+
+def recommend_spot_for_user(user_id, available_spots):
+    """Recommend best parking spot based on user preferences"""
+    if 'preference' not in AI_MODELS or not available_spots:
+        return available_spots[0] if available_spots else None
+    
+    cursor = get_cursor()
+    
+    # Get user's booking history
+    cursor.execute("""
+        SELECT COUNT(*) as total_bookings,
+               AVG(julianday(end_time) - julianday(start_time)) * 24 as avg_duration
+        FROM bookings WHERE user_id = ?
+    """, (user_id,))
+    user_stats = cursor.fetchone()
+    
+    now = datetime.now()
+    scores = []
+    
+    for spot in available_spots:
+        spot_type_mapping = {'car': 0, 'bike': 1, 'large': 2, 'motorcycle': 1, 'truck': 2}
+        
+        features = {
+            'lot_id': spot['lot_id'],
+            'spot_type_encoded': spot_type_mapping.get(spot['type'], 0),
+            'price_per_hour': spot.get('price_per_hour', DEFAULT_PRICING.get(spot['type'], 40)),
+            'distance_from_destination': 500,  # Default assumption
+            'hour_of_arrival': now.hour,
+            'day_of_week': now.weekday(),
+            'time_slot_encoded': 0 if now.hour < 12 else 1 if now.hour < 17 else 2,
+            'duration_hours': user_stats['avg_duration'] if user_stats['avg_duration'] else 2,
+            'booking_frequency': user_stats['total_bookings'] if user_stats['total_bookings'] else 1,
+            'price_sens_encoded': 1,  # Medium sensitivity
+            'location_consistency': 0.5,
+            'advance_booking_time': 1,
+            'preferred_lot': spot['lot_id'],
+            'avg_price_paid': DEFAULT_PRICING.get(spot['type'], 40),
+            'avg_distance': 500
         }
-    except json.JSONDecodeError as e:
-        app.logger.error(f"JSON decode error from Gemini: {cleaned_response if 'cleaned_response' in locals() else 'no response'}")
-        return {
-            "spot_id": available_spots[0]['spot_id'],
-            "explanation": "Quick pick - AI response invalid"
-        }
-    except Exception as e:
-        app.logger.error(f"Error calling Gemini API: {e}")
-        return {
-            "spot_id": available_spots[0]['spot_id'],
-            "explanation": f"Quick pick - API error"
-        }
+        
+        df = pd.DataFrame([features])
+        df_scaled = AI_MODELS['preference_scaler'].transform(df)
+        score = AI_MODELS['preference'].predict(df_scaled)[0]
+        
+        scores.append({
+            'spot': spot,
+            'preference_score': score
+        })
+    
+    # Sort by score descending
+    scores.sort(key=lambda x: x['preference_score'], reverse=True)
+    return scores[0]['spot']
+
+def forecast_peak_hours(lot_id, hours_ahead=3):
+    """Forecast peak occupancy in next N hours"""
+    if 'forecasting' not in AI_MODELS:
+        return None
+    
+    cursor = get_cursor()
+    cursor.execute("SELECT COUNT(*) as capacity FROM spots WHERE lot_id = ?", (lot_id,))
+    capacity = cursor.fetchone()['capacity']
+    
+    # Get current occupancy
+    cursor.execute("""
+        SELECT COUNT(*) as occupied 
+        FROM spots 
+        WHERE lot_id = ? AND status = 'occupied'
+    """, (lot_id,))
+    current_occupied = cursor.fetchone()['occupied']
+    current_occupancy = (current_occupied / capacity * 100) if capacity > 0 else 0
+    
+    now = datetime.now()
+    
+    # Build features (simplified - would need historical data for real lag features)
+    features = {
+        'lot_id': lot_id,
+        'hour': now.hour,
+        'day_of_week': now.weekday(),
+        'week_of_year': now.isocalendar()[1],
+        'month': now.month,
+        'is_weekend': int(now.weekday() >= 5),
+        'is_holiday': 0,
+        'is_rush_hour': int((7 <= now.hour <= 9) or (17 <= now.hour <= 19)),
+        'special_event_flag': 0,
+        'total_spots': capacity,
+        'spots_available': capacity - current_occupied,
+        'new_bookings_this_hour': 5,
+        'bookings_ending_this_hour': 3,
+        'avg_duration_this_hour': 2.5,
+        'rolling_avg_7days': current_occupancy,
+        'rolling_avg_30days': current_occupancy,
+        'seasonal_index': 1.0,
+        'trend_component': 1.0,
+        # Lag features (using current as approximation)
+        'occupancy_lag_1h': current_occupancy,
+        'occupancy_lag_2h': current_occupancy,
+        'occupancy_lag_3h': current_occupancy,
+        'occupancy_lag_6h': current_occupancy,
+        'occupancy_lag_12h': current_occupancy,
+        'occupancy_lag_24h': current_occupancy,
+        # Moving averages
+        'occupancy_ma_3h': current_occupancy,
+        'occupancy_ma_6h': current_occupancy,
+        'occupancy_ma_12h': current_occupancy,
+        'occupancy_ma_24h': current_occupancy,
+        # Changes
+        'occupancy_change_1h': 0,
+        'occupancy_change_3h': 0,
+        'occupancy_ewma': current_occupancy,
+        # Cyclical features
+        'hour_sin': np.sin(2 * np.pi * now.hour / 24),
+        'hour_cos': np.cos(2 * np.pi * now.hour / 24),
+        'day_sin': np.sin(2 * np.pi * now.weekday() / 7),
+        'day_cos': np.cos(2 * np.pi * now.weekday() / 7),
+        'month_sin': np.sin(2 * np.pi * now.month / 12),
+        'month_cos': np.cos(2 * np.pi * now.month / 12)
+    }
+    
+    df = pd.DataFrame([features])
+    peak_prediction = AI_MODELS['forecasting'].predict(df)[0]
+    
+    return {
+        'current_occupancy': round(current_occupancy, 1),
+        'peak_occupancy_next_hours': round(peak_prediction, 1),
+        'hours_ahead': hours_ahead,
+        'recommendation': 'Book now!' if peak_prediction > 85 else 'Good availability' if peak_prediction < 50 else 'Moderate demand'
+    }
 
 # --- Booking Utilities ---
 def create_booking(lot_id, spot_id, user_id, start_dt, end_dt, price_per_hour):
@@ -422,14 +648,34 @@ def login_user():
     if not email or not password:
         return jsonify({"message": "Missing required fields"}), 400
 
-    cursor = get_cursor()
-    cursor.execute(f"SELECT * FROM users WHERE email = ?", (email,))
+    # Check if this is a demo account FIRST
+    is_demo = is_demo_account(email)
+    
+    # Connect to appropriate database
+    db_path = DEMO_DB_PATH if is_demo else REGULAR_DB_PATH
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT * FROM users WHERE email = ?", (email,))
     user = cursor.fetchone()
+    conn.close()
 
     if user and check_password_hash(user['password_hash'], password):
         session['user_id'], session['name'] = user['user_id'], user['name']
-        session['role'] = requested_role if requested_role in ['customer', 'owner'] else session.get('role', 'customer')
-        return jsonify({"message": "Login successful", "redirect": url_for(f'{session["role"]}_page')})
+        session['role'] = requested_role if requested_role in ['customer', 'owner'] else user.get('role', 'customer')
+        session['is_demo'] = is_demo  # Track if demo account
+        
+        if session['is_demo']:
+            app.logger.info(f"Demo account logged in: {email} (using demo.db)")
+        else:
+            app.logger.info(f"Regular user logged in: {email} (using parking.db)")
+        
+        return jsonify({
+            "message": "Login successful", 
+            "redirect": url_for(f'{session["role"]}_page'),
+            "is_demo": session['is_demo']
+        })
     else:
         return jsonify({"message": "Invalid email or password"}), 401
 
@@ -441,7 +687,7 @@ def switch_role(new_role):
     if new_role in ['customer', 'owner']:
         if new_role == 'owner':
             cursor = get_cursor()
-            cursor.execute(f"SELECT COUNT(*) FROM lots WHERE user_id = ?", (session['user_id'],))
+            cursor.execute(f"SELECT COUNT(*) FROM lots WHERE owner_id = ?", (session['user_id'],))
             if cursor.fetchone()[0] == 0:
                 return redirect(url_for('customer_page'))
         session['role'] = new_role
@@ -456,7 +702,7 @@ def get_me():
         return jsonify({"message": "Unauthorized"}), 401
     
     cursor = get_cursor()
-    cursor.execute(f"SELECT COUNT(*) FROM lots WHERE user_id = ?", (user_id,))
+    cursor.execute(f"SELECT COUNT(*) FROM lots WHERE owner_id = ?", (user_id,))
     lot_count = cursor.fetchone()[0]
     
     return jsonify({'name': session.get('name'), 'role': session.get('role'), 'is_owner': lot_count > 0})
@@ -489,10 +735,10 @@ def smart_search_route():
     cursor = get_cursor()
     cursor.execute(
         """
-        SELECT s.spot_id, s.type, s.price_per_hour, s.display_order, l.location, l.latitude, l.longitude, l.lot_id
+        SELECT s.spot_id, s.type, s.price_per_hour, l.location, l.latitude, l.longitude, l.lot_id
         FROM spots s
         JOIN lots l ON s.lot_id = l.lot_id
-        ORDER BY s.display_order ASC
+        ORDER BY s.spot_id ASC
         """
     )
 
@@ -506,8 +752,7 @@ def smart_search_route():
                 'latitude': row['latitude'],
                 'longitude': row['longitude'],
                 'price_per_hour': row['price_per_hour'],
-                'lot_id': row['lot_id'],
-                'display_order': row['display_order']
+                'lot_id': row['lot_id']
             })
 
     app.logger.info(f"Found {len(available_spots)} time-available spots")
@@ -627,7 +872,7 @@ def get_lots():
         return jsonify({"message": "Unauthorized"}), 401
 
     cursor = get_cursor()
-    cursor.execute(f"SELECT * FROM lots WHERE user_id = ?", (user_id,))
+    cursor.execute(f"SELECT * FROM lots WHERE owner_id = ?", (user_id,))
     lots = [dict(row) for row in cursor.fetchall()]
     now_iso = format_datetime(datetime.utcnow())
     for lot in lots:
@@ -685,7 +930,7 @@ def create_lot():
     db = get_db()
     cursor = db.cursor()
     
-    sql = f"INSERT INTO lots (user_id, location, latitude, longitude) VALUES (?, ?, ?, ?)"
+    sql = f"INSERT INTO lots (owner_id, location, latitude, longitude) VALUES (?, ?, ?, ?)"
     params = (user_id, data.get('location'), data.get('latitude'), data.get('longitude'))
     
     cursor.execute(sql, params)
@@ -702,18 +947,18 @@ def create_lot():
     large_total = int(data.get('large_spots') or 0)
     motorcycle_total = int(data.get('motorcycle_spots') or 0)
 
-    # Create spots with per-lot IDs and display_order
+    # Create spots with per-lot IDs
     spot_num = 1
     for i in range(large_total):
         cursor.execute(
-            "INSERT INTO spots (lot_id, spot_id, type, status, price_per_hour, display_order) VALUES (?, ?, ?, ?, ?, ?)",
-            (lot_id, spot_num, 'large', 'available', large_price, spot_num)
+            "INSERT INTO spots (lot_id, spot_id, type, status, price_per_hour) VALUES (?, ?, ?, ?, ?)",
+            (lot_id, spot_num, 'large', 'available', large_price)
         )
         spot_num += 1
     for i in range(motorcycle_total):
         cursor.execute(
-            "INSERT INTO spots (lot_id, spot_id, type, status, price_per_hour, display_order) VALUES (?, ?, ?, ?, ?, ?)",
-            (lot_id, spot_num, 'motorcycle', 'available', motorcycle_price, spot_num)
+            "INSERT INTO spots (lot_id, spot_id, type, status, price_per_hour) VALUES (?, ?, ?, ?, ?)",
+            (lot_id, spot_num, 'motorcycle', 'available', motorcycle_price)
         )
         spot_num += 1
 
@@ -726,12 +971,12 @@ def get_lot(lot_id):
     if not user_id: return jsonify({"message": "Unauthorized"}), 401
 
     cursor = get_cursor()
-    cursor.execute(f"SELECT * FROM lots WHERE lot_id = ? AND user_id = ?", (lot_id, user_id))
+    cursor.execute(f"SELECT * FROM lots WHERE lot_id = ? AND owner_id = ?", (lot_id, user_id))
     lot = cursor.fetchone()
     if not lot: return jsonify({"message": "Lot not found or unauthorized"}), 404
     
     lot = dict(lot)
-    cursor.execute(f"SELECT spot_id, type, status, price_per_hour, display_order FROM spots WHERE lot_id = ? ORDER BY display_order ASC", (lot_id,))
+    cursor.execute(f"SELECT spot_id, type, status, price_per_hour FROM spots WHERE lot_id = ? ORDER BY spot_id ASC", (lot_id,))
     spots = []
     for row in cursor.fetchall():
         spot = dict(row)
@@ -775,18 +1020,18 @@ def update_lot(lot_id):
     large_total = int(data.get('large_spots') or 0)
     motorcycle_total = int(data.get('motorcycle_spots') or 0)
 
-    # Create spots with per-lot IDs and display_order
+    # Create spots with per-lot IDs
     spot_num = 1
     for i in range(large_total):
         cursor.execute(
-            "INSERT INTO spots (lot_id, spot_id, type, status, price_per_hour, display_order) VALUES (?, ?, ?, ?, ?, ?)",
-            (lot_id, spot_num, 'large', 'available', large_price, spot_num)
+            "INSERT INTO spots (lot_id, spot_id, type, status, price_per_hour) VALUES (?, ?, ?, ?, ?)",
+            (lot_id, spot_num, 'large', 'available', large_price)
         )
         spot_num += 1
     for i in range(motorcycle_total):
         cursor.execute(
-            "INSERT INTO spots (lot_id, spot_id, type, status, price_per_hour, display_order) VALUES (?, ?, ?, ?, ?, ?)",
-            (lot_id, spot_num, 'motorcycle', 'available', motorcycle_price, spot_num)
+            "INSERT INTO spots (lot_id, spot_id, type, status, price_per_hour) VALUES (?, ?, ?, ?, ?)",
+            (lot_id, spot_num, 'motorcycle', 'available', motorcycle_price)
         )
         spot_num += 1
 
@@ -800,9 +1045,9 @@ def delete_lot(lot_id):
 
     db = get_db()
     cursor = db.cursor()
-    cursor.execute(f"SELECT user_id FROM lots WHERE lot_id = ?", (lot_id,))
+    cursor.execute(f"SELECT owner_id FROM lots WHERE lot_id = ?", (lot_id,))
     lot_owner = cursor.fetchone()
-    if not lot_owner or lot_owner['user_id'] != user_id:
+    if not lot_owner or lot_owner['owner_id'] != user_id:
         return jsonify({"message": "Unauthorized to delete this lot"}), 403
 
     cursor.execute(f"SELECT spot_id FROM spots WHERE lot_id = ?", (lot_id,))
@@ -826,9 +1071,9 @@ def add_spot(lot_id):
     cursor = db.cursor()
     
     # Verify lot ownership
-    cursor.execute(f"SELECT user_id FROM lots WHERE lot_id = ?", (lot_id,))
+    cursor.execute(f"SELECT owner_id FROM lots WHERE lot_id = ?", (lot_id,))
     lot_owner = cursor.fetchone()
-    if not lot_owner or lot_owner['user_id'] != user_id:
+    if not lot_owner or lot_owner['owner_id'] != user_id:
         return jsonify({"message": "Unauthorized to add spots to this lot"}), 403
 
     data = request.get_json()
@@ -840,7 +1085,6 @@ def add_spot(lot_id):
         spot_type = 'motorcycle'
 
     price_per_hour = coerce_price(price_per_hour, get_spot_default_price(spot_type))
-    display_order = data.get('display_order', 999)
 
     # Get next spot_id for this lot
     cursor.execute("SELECT MAX(spot_id) FROM spots WHERE lot_id = ?", (lot_id,))
@@ -848,8 +1092,8 @@ def add_spot(lot_id):
     next_spot_id = (max_spot or 0) + 1
 
     cursor.execute(
-        f"INSERT INTO spots (lot_id, spot_id, type, status, price_per_hour, display_order) VALUES (?, ?, ?, ?, ?, ?)",
-        (lot_id, next_spot_id, spot_type, spot_status, price_per_hour, display_order)
+        f"INSERT INTO spots (lot_id, spot_id, type, status, price_per_hour) VALUES (?, ?, ?, ?, ?)",
+        (lot_id, next_spot_id, spot_type, spot_status, price_per_hour)
     )
     db.commit()
     
@@ -870,15 +1114,15 @@ def update_spot(lot_id, spot_id):
     cursor = db.cursor()
     
     # Verify lot ownership
-    cursor.execute(f"SELECT user_id FROM lots WHERE lot_id = ?", (lot_id,))
+    cursor.execute(f"SELECT owner_id FROM lots WHERE lot_id = ?", (lot_id,))
     lot_owner = cursor.fetchone()
-    if not lot_owner or lot_owner['user_id'] != user_id:
+    if not lot_owner or lot_owner['owner_id'] != user_id:
         return jsonify({"message": "Unauthorized to update spots in this lot"}), 403
 
     data = request.get_json()
 
     cursor.execute(
-        "SELECT type, status, display_order FROM spots WHERE lot_id = ? AND spot_id = ?",
+        "SELECT type, status FROM spots WHERE lot_id = ? AND spot_id = ?",
         (lot_id, spot_id)
     )
     existing_spot = cursor.fetchone()
@@ -888,7 +1132,6 @@ def update_spot(lot_id, spot_id):
     spot_type = data.get('type', existing_spot['type'])
     spot_status = data.get('status', existing_spot['status'] or 'available')
     price_per_hour = data.get('price_per_hour')
-    display_order = data.get('display_order', existing_spot['display_order'])
 
     if spot_type == 'small':
         spot_type = 'motorcycle'
@@ -899,8 +1142,8 @@ def update_spot(lot_id, spot_id):
     price_per_hour = coerce_price(price_per_hour, get_spot_default_price(spot_type))
 
     cursor.execute(
-        f"UPDATE spots SET type = ?, status = ?, price_per_hour = ?, display_order = ? WHERE lot_id = ? AND spot_id = ?",
-        (spot_type, spot_status, price_per_hour, display_order, lot_id, spot_id)
+        f"UPDATE spots SET type = ?, status = ?, price_per_hour = ? WHERE lot_id = ? AND spot_id = ?",
+        (spot_type, spot_status, price_per_hour, lot_id, spot_id)
     )
     db.commit()
     
@@ -920,9 +1163,9 @@ def delete_spot(lot_id, spot_id):
     cursor = db.cursor()
     
     # Verify lot ownership
-    cursor.execute(f"SELECT user_id FROM lots WHERE lot_id = ?", (lot_id,))
+    cursor.execute(f"SELECT owner_id FROM lots WHERE lot_id = ?", (lot_id,))
     lot_owner = cursor.fetchone()
-    if not lot_owner or lot_owner['user_id'] != user_id:
+    if not lot_owner or lot_owner['owner_id'] != user_id:
         return jsonify({"message": "Unauthorized to delete spots in this lot"}), 403
 
     cursor.execute(f"DELETE FROM bookings WHERE lot_id = ? AND spot_id = ?", (lot_id, spot_id))
@@ -939,9 +1182,9 @@ def get_lot_bookings(lot_id):
         return jsonify({"message": "Unauthorized"}), 401
 
     cursor = get_cursor()
-    cursor.execute("SELECT user_id FROM lots WHERE lot_id = ?", (lot_id,))
+    cursor.execute("SELECT owner_id FROM lots WHERE lot_id = ?", (lot_id,))
     lot_row = cursor.fetchone()
-    if not lot_row or lot_row['user_id'] != user_id:
+    if not lot_row or lot_row['owner_id'] != user_id:
         return jsonify({"message": "Unauthorized"}), 403
 
     cursor.execute(
@@ -1026,11 +1269,280 @@ async def test_gemini():
             "api_key_prefix": api_key[:10] + "..." if len(api_key) > 10 else "too_short"
         }), 500
 
+# ==================== AI PREDICTION API ENDPOINTS ====================
+
+@app.route('/api/ai/predict-occupancy/<int:lot_id>', methods=['GET'])
+def api_predict_occupancy(lot_id):
+    """Predict occupancy for a parking lot"""
+    try:
+        target_time_str = request.args.get('time')
+        target_time = datetime.fromisoformat(target_time_str) if target_time_str else None
+        
+        prediction = predict_occupancy(lot_id, target_time)
+        
+        if prediction is None:
+            return jsonify({"error": "AI model not available"}), 503
+        
+        return jsonify({
+            "success": True,
+            "lot_id": lot_id,
+            "prediction": prediction,
+            "timestamp": datetime.now().isoformat()
+        })
+    except Exception as e:
+        app.logger.error(f"Occupancy prediction error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/ai/optimize-price', methods=['POST'])
+def api_optimize_price():
+    """Get optimal price recommendation"""
+    try:
+        data = request.get_json()
+        lot_id = data.get('lot_id')
+        spot_type = data.get('spot_type', 'car')
+        current_occupancy = data.get('current_occupancy', 50)
+        base_price = data.get('base_price', DEFAULT_PRICING.get(spot_type, 40))
+        
+        optimal_price = optimize_price(lot_id, spot_type, current_occupancy, base_price)
+        
+        return jsonify({
+            "success": True,
+            "base_price": base_price,
+            "optimal_price": optimal_price,
+            "price_change_percent": round(((optimal_price - base_price) / base_price) * 100, 1),
+            "recommendation": "Surge pricing" if optimal_price > base_price * 1.2 else "Discount pricing" if optimal_price < base_price * 0.9 else "Standard pricing"
+        })
+    except Exception as e:
+        app.logger.error(f"Price optimization error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/ai/recommend-spot', methods=['POST'])
+def api_recommend_spot():
+    """Recommend best spot for user based on preferences"""
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    try:
+        data = request.get_json()
+        available_spots = data.get('available_spots', [])
+        
+        if not available_spots:
+            return jsonify({"error": "No available spots provided"}), 400
+        
+        recommended = recommend_spot_for_user(user_id, available_spots)
+        
+        return jsonify({
+            "success": True,
+            "recommended_spot": recommended,
+            "reason": "Based on your booking history and preferences"
+        })
+    except Exception as e:
+        app.logger.error(f"Spot recommendation error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/ai/forecast/<int:lot_id>', methods=['GET'])
+def api_forecast_peak(lot_id):
+    """Forecast peak hours for a parking lot"""
+    try:
+        hours_ahead = int(request.args.get('hours', 3))
+        
+        forecast = forecast_peak_hours(lot_id, hours_ahead)
+        
+        if forecast is None:
+            return jsonify({"error": "AI model not available"}), 503
+        
+        return jsonify({
+            "success": True,
+            "lot_id": lot_id,
+            "forecast": forecast,
+            "timestamp": datetime.now().isoformat()
+        })
+    except Exception as e:
+        app.logger.error(f"Forecast error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/ai/status', methods=['GET'])
+def api_ai_status():
+    """Check AI models status"""
+    return jsonify({
+        "ai_enabled": len(AI_MODELS) > 0,
+        "models_loaded": list(AI_MODELS.keys()),
+        "features": {
+            "occupancy_prediction": 'occupancy' in AI_MODELS,
+            "price_optimization": 'pricing' in AI_MODELS,
+            "user_preferences": 'preference' in AI_MODELS and 'preference_scaler' in AI_MODELS,
+            "time_series_forecasting": 'forecasting' in AI_MODELS
+        }
+    })
+
+@app.route('/api/lot/<int:lot_id>/analytics', methods=['GET'])
+def get_lot_analytics(lot_id):
+    """Get comprehensive analytics for a parking lot - DATA IS USER-SPECIFIC"""
+    if 'user_id' not in session or session.get('role') != 'owner':
+        return jsonify({"message": "Unauthorized"}), 401
+    
+    try:
+        cursor = get_cursor()
+        owner_id = session['user_id']
+        
+        app.logger.info(f"Loading analytics for lot {lot_id}, owner {owner_id}")
+        
+        # Get lot details - FILTERED BY OWNER
+        cursor.execute("SELECT * FROM lots WHERE lot_id = ? AND owner_id = ?", (lot_id, owner_id))
+        lot = cursor.fetchone()
+        if not lot:
+            app.logger.warning(f"Lot {lot_id} not found for owner {owner_id}")
+            return jsonify({"message": "Lot not found or you don't have permission"}), 404
+        
+        # Get current month revenue
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total_bookings,
+                SUM(total_cost) as total_revenue,
+                AVG(total_cost) as avg_booking_value,
+                AVG((julianday(end_time) - julianday(start_time)) * 24) as avg_duration_hours
+            FROM bookings
+            WHERE lot_id = ? 
+            AND strftime('%Y-%m', start_time) = strftime('%Y-%m', 'now')
+        """, (lot_id,))
+        current_month = dict(cursor.fetchone())
+        
+        # Get last month revenue for comparison
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total_bookings,
+                SUM(total_cost) as total_revenue
+            FROM bookings
+            WHERE lot_id = ? 
+            AND strftime('%Y-%m', start_time) = strftime('%Y-%m', 'now', '-1 month')
+        """, (lot_id,))
+        last_month = dict(cursor.fetchone())
+        
+        # Get daily revenue for current month
+        cursor.execute("""
+            SELECT 
+                strftime('%Y-%m-%d', start_time) as date,
+                COUNT(*) as bookings,
+                SUM(total_cost) as revenue
+            FROM bookings
+            WHERE lot_id = ? 
+            AND strftime('%Y-%m', start_time) = strftime('%Y-%m', 'now')
+            GROUP BY strftime('%Y-%m-%d', start_time)
+            ORDER BY date
+        """, (lot_id,))
+        daily_revenue = [dict(row) for row in cursor.fetchall()]
+        
+        # Get peak hours data
+        cursor.execute("""
+            SELECT 
+                strftime('%H', start_time) as hour,
+                COUNT(*) as bookings,
+                SUM(total_cost) as revenue
+            FROM bookings
+            WHERE lot_id = ? 
+            AND strftime('%Y-%m', start_time) = strftime('%Y-%m', 'now')
+            GROUP BY hour
+            ORDER BY bookings DESC
+            LIMIT 5
+        """, (lot_id,))
+        peak_hours = [dict(row) for row in cursor.fetchall()]
+        
+        # Get spot type performance
+        cursor.execute("""
+            SELECT 
+                s.type,
+                COUNT(*) as bookings,
+                SUM(b.total_cost) as revenue,
+                AVG(b.total_cost) as avg_revenue
+            FROM bookings b
+            JOIN spots s ON b.lot_id = s.lot_id AND b.spot_id = s.spot_id
+            WHERE b.lot_id = ? 
+            AND strftime('%Y-%m', b.start_time) = strftime('%Y-%m', 'now')
+            GROUP BY s.type
+        """, (lot_id,))
+        spot_performance = [dict(row) for row in cursor.fetchall()]
+        
+        # Calculate growth
+        growth_rate = 0
+        if last_month['total_revenue'] and last_month['total_revenue'] > 0:
+            growth_rate = ((current_month['total_revenue'] or 0) - last_month['total_revenue']) / last_month['total_revenue'] * 100
+        
+        # Get AI predictions for next 24 hours
+        predictions = []
+        now = datetime.now()
+        for hour_offset in range(0, 24, 3):  # Every 3 hours
+            target_time = now + timedelta(hours=hour_offset)
+            pred = predict_occupancy(lot_id, target_time)
+            if pred:
+                predictions.append({
+                    "time": target_time.strftime("%H:%M"),
+                    "hour_offset": hour_offset,
+                    "occupancy_rate": pred['occupancy_rate'],
+                    "predicted_occupied": pred['predicted_occupied']
+                })
+        
+        # Get pricing recommendations for different occupancy levels
+        pricing_recommendations = []
+        lot_dict = dict(lot)
+        base_price = lot_dict.get('large_price_per_hour', 50.0)
+        
+        for occupancy in [30, 50, 70, 90]:
+            try:
+                price_rec = optimize_price(
+                    lot_id, 
+                    'large', 
+                    occupancy,
+                    base_price
+                )
+                if price_rec and 'optimal_price' in price_rec:
+                    pricing_recommendations.append({
+                        "occupancy_level": occupancy,
+                        "recommended_price": price_rec['optimal_price'],
+                        "current_price": base_price,
+                        "increase_percentage": ((price_rec['optimal_price'] - base_price) / base_price * 100) if base_price > 0 else 0
+                    })
+            except Exception as e:
+                app.logger.warning(f"Price optimization failed for occupancy {occupancy}: {e}")
+                continue
+        
+        return jsonify({
+            "lot": lot_dict,
+            "current_month": current_month,
+            "last_month": last_month,
+            "growth_rate": round(growth_rate, 2),
+            "daily_revenue": daily_revenue,
+            "peak_hours": peak_hours,
+            "spot_performance": spot_performance,
+            "ai_predictions": predictions,
+            "pricing_recommendations": pricing_recommendations
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Analytics error: {e}")
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == '__main__':
     with app.app_context():
-        init_db()
+        # Initialize both databases on startup
+        print("🔧 Initializing databases...")
+        
+        # Check if databases exist, create if not
+        if not os.path.exists(DEMO_DB_PATH):
+            print(f"⚠️  {DEMO_DB_PATH} not found. Run: python complete_setup.py")
+        
+        if not os.path.exists(REGULAR_DB_PATH):
+            print(f"📊 Creating {REGULAR_DB_PATH}...")
+            init_db()  # Creates parking.db
+        
+        load_ai_models()  # Load AI models on startup
+        print("✅ Ready!")
+        
     socketio.run(app, debug=True)
 
-# Initialize database on startup (for production)
+# Initialize database and AI models on startup (for production)
 with app.app_context():
-    init_db()
+    # Ensure parking.db exists for regular users
+    if not os.path.exists(REGULAR_DB_PATH):
+        init_db()
+    load_ai_models()

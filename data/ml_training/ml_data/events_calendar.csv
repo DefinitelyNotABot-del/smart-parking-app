@@ -1,0 +1,13 @@
+event_date,event_name,event_location,expected_attendance,impact_radius_km
+2025-01-01,Conference 8,Residential Area,2000,1.0
+2025-01-18,Conference 6,Transit Hub,2000,1.0
+2025-02-07,Festival 4,Office District,10000,5.0
+2025-02-08,Festival 10,Hospital Complex,10000,5.0
+2025-03-04,Festival 3,Hospital Complex,10000,5.0
+2025-03-16,Exhibition 1,Residential Area,3000,2.0
+2025-03-29,Exhibition 7,Residential Area,3000,2.0
+2025-04-17,Festival 2,Transit Hub,10000,5.0
+2025-05-04,Conference 11,Residential Area,2000,1.0
+2025-05-22,Exhibition 12,Transit Hub,3000,2.0
+2025-05-31,Exhibition 9,Transit Hub,3000,2.0
+2025-06-03,Exhibition 5,Office District,3000,2.0

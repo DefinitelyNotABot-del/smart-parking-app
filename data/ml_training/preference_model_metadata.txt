@@ -1,0 +1,34 @@
+USER PREFERENCE LEARNING MODEL
+======================================================================
+
+Trained: 2025-11-13 18:47:15
+Algorithm: K-Nearest Neighbors Regressor
+Training samples: 26,452
+Test samples: 6,614
+
+PERFORMANCE METRICS
+----------------------------------------------------------------------
+Test MAE:  0.1005
+Test RMSE: 0.1313
+Test R²:   0.9150
+
+FEATURES (Normalized)
+----------------------------------------------------------------------
+  - lot_id
+  - spot_type_encoded
+  - price_per_hour
+  - distance_from_destination
+  - hour_of_arrival
+  - day_of_week
+  - time_slot_encoded
+  - duration_hours
+  - booking_frequency
+  - price_sens_encoded
+  - location_consistency
+  - advance_booking_time
+  - preferred_lot
+  - avg_price_paid
+  - avg_distance
+
+NOTE: Features are scaled using StandardScaler
+Scaler saved to: preference_scaler.pkl

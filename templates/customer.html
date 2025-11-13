@@ -32,6 +32,15 @@
                 <button id="logoutBtn" class="btn btn-secondary btn-sm float-right">Logout</button>
             </div>
         </div>
+        
+        <!-- Demo Account Banner -->
+        {% if session.get('is_demo') %}
+        <div class="alert alert-warning alert-dismissible fade show" role="alert">
+            <strong>🎯 Demo Mode</strong> - Pre-generated data available!
+            <button type="button" class="close" data-dismiss="alert">&times;</button>
+        </div>
+        {% endif %}
+        
         <div class="card mb-3">
             <div class="card-body">
                 <h3>Find a Parking Spot</h3>
@@ -50,6 +59,12 @@
                     <button id="searchBtn" class="btn btn-primary btn-block mt-2">Search</button>
                     <div id="loadingSpinner" class="spinner-border text-primary mt-2" role="status" style="display:none;">
                         <span class="sr-only">Loading...</span>
+                    </div>
+                </div>
+                <div id="aiInsights" class="mt-3" style="display:none;">
+                    <div class="alert alert-info">
+                        <strong>🤖 AI Insights</strong>
+                        <div id="aiPrediction"></div>
                     </div>
                 </div>
                 <div id="resultsContainer">
@@ -209,9 +224,16 @@
                 } else if (result.message) {
                     resultsContainer.innerHTML = `<p>${result.message}</p>`;
                 } else if (result.spot_id && result.explanation) {
+                    // Show AI predictions
+                    if (result.lot_id) {
+                        showAIPredictions(result.lot_id);
+                    }
+
                     resultsContainer.innerHTML = `
                         <h5>Spot Available</h5>
                         <p>Spot ID: ${result.spot_id}</p>
+                        <p>Type: <span class="badge badge-secondary">${result.type || 'car'}</span></p>
+                        <p>Price: <strong>₹${result.price_per_hour || 40}/hr</strong></p>
                         <blockquote class="blockquote">
                             <p class="mb-0">${result.explanation}</p>
                             <footer class="blockquote-footer">AI Assistant</footer>
@@ -317,6 +339,39 @@
                 sidebarToggle.style.left = '420px';
             }
         });
+
+        // AI Prediction Functions
+        async function showAIPredictions(lotId) {
+            try {
+                // Get occupancy forecast
+                const forecastRes = await fetch(`/api/ai/forecast/${lotId}`);
+                const forecast = await forecastRes.json();
+                
+                if (forecast.success) {
+                    const aiInsights = document.getElementById('aiInsights');
+                    const aiPrediction = document.getElementById('aiPrediction');
+                    
+                    let alertClass = 'alert-info';
+                    if (forecast.forecast.peak_occupancy_next_hours > 85) {
+                        alertClass = 'alert-danger';
+                    } else if (forecast.forecast.peak_occupancy_next_hours < 50) {
+                        alertClass = 'alert-success';
+                    }
+                    
+                    aiInsights.parentElement.className = `alert ${alertClass}`;
+                    aiPrediction.innerHTML = `
+                        <small>
+                            <strong>Current Occupancy:</strong> ${forecast.forecast.current_occupancy}%<br>
+                            <strong>Predicted Peak (next 3hrs):</strong> ${forecast.forecast.peak_occupancy_next_hours}%<br>
+                            <strong>💡 ${forecast.forecast.recommendation}</strong>
+                        </small>
+                    `;
+                    aiInsights.style.display = 'block';
+                }
+            } catch (error) {
+                console.log('AI predictions unavailable:', error);
+            }
+        }
 
         // Initial page load
         setDefaultTimeWindow();

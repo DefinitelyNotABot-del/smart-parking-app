@@ -3,40 +3,181 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Manage Spots - Smart Parking</title>
+    <title>Lot Analytics - Smart Parking</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <style>
-        /* No specific styles for spot visuals as they are removed */
+        body { background-color: #f8f9fa; }
+        .analytics-card { height: 100%; }
+        .stat-card { border-left: 4px solid #007bff; }
+        .stat-value { font-size: 2rem; font-weight: bold; color: #007bff; }
+        .stat-label { color: #6c757d; font-size: 0.875rem; }
+        .growth-positive { color: #28a745; }
+        .growth-negative { color: #dc3545; }
+        .sidebar { background: white; min-height: 100vh; box-shadow: 2px 0 5px rgba(0,0,0,0.1); }
+        .content-area { padding: 2rem; }
+        .price-recommendation { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 10px; padding: 1.5rem; }
+        .chart-container { position: relative; height: 250px; }
+        .peak-hour-badge { display: inline-block; padding: 0.5rem 1rem; margin: 0.25rem; background: #e3f2fd; border-radius: 20px; }
     </style>
 </head>
 <body>
-    <div class="container mt-5">
-        <h1 id="lotName">Manage Spots</h1>
-        
-        <div class="card">
-            <div class="card-header">
-                Spots
-                <button class="btn btn-primary float-right" data-toggle="modal" data-target="#spotModal">Add Spot</button>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Main Content - Analytics and Spot Management -->
+            <div class="col-12 content-area">
+                {% if session.get('is_demo') %}
+                <div class="alert alert-warning alert-dismissible fade show" role="alert">
+                    <i class="fas fa-info-circle"></i> <strong>Demo Account Mode:</strong> You're viewing pre-loaded demonstration data. Changes will be saved to the demo database.
+                    <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                {% endif %}
+                
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <div>
+                        <a href="/owner" class="btn btn-outline-secondary btn-sm mb-2">
+                            <i class="fas fa-arrow-left"></i> Back to Dashboard
+                        </a>
+                        <h2 id="lotName" class="mb-0">Lot Analytics</h2>
+                        <small class="text-muted" id="lotLocation"></small>
+                    </div>
+                </div>
+
+                <!-- Revenue Overview -->
+                <div class="row mb-4">
+                    <div class="col-md-3">
+                        <div class="card stat-card">
+                            <div class="card-body">
+                                <div class="stat-label">This Month Revenue</div>
+                                <div class="stat-value" id="currentRevenue">₹0</div>
+                                <small id="growthRate" class="growth-positive">
+                                    <i class="fas fa-arrow-up"></i> 0%
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card stat-card">
+                            <div class="card-body">
+                                <div class="stat-label">Total Bookings</div>
+                                <div class="stat-value" id="totalBookings">0</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card stat-card">
+                            <div class="card-body">
+                                <div class="stat-label">Avg. Booking Value</div>
+                                <div class="stat-value" id="avgBooking">₹0</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card stat-card">
+                            <div class="card-body">
+                                <div class="stat-label">Avg. Duration</div>
+                                <div class="stat-value" id="avgDuration">0h</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- AI Price Recommendations -->
+                <div class="card mb-4">
+                    <div class="card-header bg-primary text-white">
+                        <i class="fas fa-robot"></i> AI-Powered Dynamic Pricing
+                    </div>
+                    <div class="card-body">
+                        <h6 class="mb-3">Recommended Price Adjustments by Occupancy Level:</h6>
+                        <div id="pricingRecommendations" class="row">
+                            <!-- Will be populated by JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Occupancy Forecast -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <i class="fas fa-chart-line"></i> 24-Hour Occupancy Forecast
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="occupancyChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Peak Hours -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <i class="fas fa-clock"></i> Peak Hours This Month
+                    </div>
+                    <div class="card-body">
+                        <div id="peakHours">
+                            <!-- Will be populated by JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Spot Performance -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <i class="fas fa-parking"></i> Spot Type Performance
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Type</th>
+                                    <th>Bookings</th>
+                                    <th>Revenue</th>
+                                    <th>Avg. Revenue</th>
+                                </tr>
+                            </thead>
+                            <tbody id="spotPerformance">
+                                <!-- Will be populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
-            <div class="card-body">
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>Spot ID</th>
-                            <th>Type</th>
-                            <th>Status</th>
-                            <th>Price/Hour</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="spotsTable">
-                        <!-- Spots will be loaded here -->
-                    </tbody>
-                </table>
+        </div>
+
+        <!-- Spot Management Section -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">Spot Management</h5>
+                        <button class="btn btn-primary btn-sm" data-toggle="modal" data-target="#spotModal">
+                            <i class="fas fa-plus"></i> Add Spot
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Spot ID</th>
+                                        <th>Type</th>
+                                        <th>Status</th>
+                                        <th>Price/Hour</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="spotsTable">
+                                    <!-- Spots will be loaded here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -84,17 +225,22 @@
     <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <script>
+        let occupancyChart;
+        
         $(document).ready(function() {
             const lotId = window.location.pathname.split('/').pop();
             loadSpots(lotId);
+            loadAnalytics(lotId);
 
             const socket = io();
 
             socket.on('status_change', function(data) {
                 console.log('Status change received on lot spots page:', data);
                 loadSpots(lotId);
+                loadAnalytics(lotId);
             });
 
             // Reset form when modal is closed
@@ -137,33 +283,194 @@
             });
         });
 
+        function loadAnalytics(lotId) {
+            $.get(`/api/lot/${lotId}/analytics`, function(data) {
+                console.log('Analytics data received:', data);
+                
+                // Update header
+                $('#lotName').text(`${data.lot.location} - Analytics`);
+                $('#lotLocation').text(`Lot ID: ${data.lot.lot_id}`);
+                
+                // Update stats with safe fallbacks
+                const revenue = data.current_month?.total_revenue || 0;
+                const bookings = data.current_month?.total_bookings || 0;
+                const avgValue = data.current_month?.avg_booking_value || 0;
+                const avgDuration = data.current_month?.avg_duration_hours || 0;
+                
+                $('#currentRevenue').text(`₹${revenue.toFixed(2)}`);
+                $('#totalBookings').text(bookings);
+                $('#avgBooking').text(`₹${avgValue.toFixed(2)}`);
+                $('#avgDuration').text(`${avgDuration.toFixed(1)}h`);
+                
+                // Update growth rate
+                const growth = data.growth_rate;
+                const growthEl = $('#growthRate');
+                if (growth > 0) {
+                    growthEl.html(`<i class="fas fa-arrow-up"></i> ${growth.toFixed(1)}% vs last month`);
+                    growthEl.removeClass('growth-negative').addClass('growth-positive');
+                } else if (growth < 0) {
+                    growthEl.html(`<i class="fas fa-arrow-down"></i> ${Math.abs(growth).toFixed(1)}% vs last month`);
+                    growthEl.removeClass('growth-positive').addClass('growth-negative');
+                } else {
+                    growthEl.html(`<i class="fas fa-minus"></i> No change`);
+                }
+                
+                // Pricing recommendations
+                const pricingDiv = $('#pricingRecommendations');
+                pricingDiv.empty();
+                data.pricing_recommendations.forEach(rec => {
+                    const change = rec.increase_percentage;
+                    const changeColor = change > 0 ? 'success' : change < 0 ? 'danger' : 'secondary';
+                    pricingDiv.append(`
+                        <div class="col-md-6 mb-3">
+                            <div class="card border-${changeColor}">
+                                <div class="card-body">
+                                    <h6 class="card-title">${rec.occupancy_level}% Occupancy</h6>
+                                    <p class="mb-1">Current: ₹${rec.current_price.toFixed(2)}/hr</p>
+                                    <p class="mb-1"><strong>Recommended: ₹${rec.recommended_price.toFixed(2)}/hr</strong></p>
+                                    <small class="text-${changeColor}">
+                                        ${change > 0 ? '+' : ''}${change.toFixed(1)}% ${change > 0 ? 'increase' : change < 0 ? 'decrease' : 'no change'}
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                    `);
+                });
+                
+                // Occupancy forecast chart
+                if (data.ai_predictions && data.ai_predictions.length > 0) {
+                    const ctx = document.getElementById('occupancyChart').getContext('2d');
+                    if (occupancyChart) occupancyChart.destroy();
+                    occupancyChart = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: data.ai_predictions.map(p => p.time),
+                            datasets: [{
+                                label: 'Predicted Occupancy %',
+                                data: data.ai_predictions.map(p => p.occupancy_rate),
+                                borderColor: '#007bff',
+                                backgroundColor: 'rgba(0, 123, 255, 0.1)',
+                                tension: 0.4,
+                                fill: true
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    max: 100,
+                                    ticks: {
+                                        callback: function(value) {
+                                            return value + '%';
+                                        }
+                                    }
+                                }
+                            },
+                            plugins: {
+                                legend: {
+                                    display: false
+                                },
+                                tooltip: {
+                                    callbacks: {
+                                        label: function(context) {
+                                            return context.parsed.y.toFixed(1) + '% occupancy';
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+                
+                // Peak hours
+                const peakDiv = $('#peakHours');
+                peakDiv.empty();
+                if (data.peak_hours.length > 0) {
+                    data.peak_hours.forEach(peak => {
+                        const hour = parseInt(peak.hour);
+                        const timeStr = hour === 0 ? '12 AM' : hour < 12 ? `${hour} AM` : hour === 12 ? '12 PM' : `${hour - 12} PM`;
+                        peakDiv.append(`
+                            <span class="peak-hour-badge">
+                                <strong>${timeStr}</strong> - ${peak.bookings} bookings (₹${parseFloat(peak.revenue).toFixed(2)})
+                            </span>
+                        `);
+                    });
+                } else {
+                    peakDiv.html('<p class="text-muted">No booking data available yet.</p>');
+                }
+                
+                // Spot performance
+                const perfTable = $('#spotPerformance');
+                perfTable.empty();
+                if (data.spot_performance.length > 0) {
+                    data.spot_performance.forEach(spot => {
+                        perfTable.append(`
+                            <tr>
+                                <td><span class="badge badge-info">${spot.type}</span></td>
+                                <td>${spot.bookings}</td>
+                                <td>₹${parseFloat(spot.revenue).toFixed(2)}</td>
+                                <td>₹${parseFloat(spot.avg_revenue).toFixed(2)}</td>
+                            </tr>
+                        `);
+                    });
+                } else {
+                    perfTable.html('<tr><td colspan="4" class="text-muted text-center">No data available</td></tr>');
+                }
+            }).fail(function(xhr) {
+                console.error('Failed to load analytics:', xhr.status, xhr.responseText);
+                const errorMsg = xhr.responseJSON?.error || xhr.responseJSON?.message || 'Unknown error';
+                $('#lotName').text('Analytics - Error Loading Data');
+                $('#currentRevenue').text('Error');
+                $('#totalBookings').text('N/A');
+                $('#avgBooking').text('N/A');
+                $('#avgDuration').text('N/A');
+                
+                // Show error in pricing recommendations area
+                $('#pricingRecommendations').html(`
+                    <div class="col-12">
+                        <div class="alert alert-danger">
+                            <strong>Failed to load analytics:</strong> ${errorMsg}
+                            <br><small>Check console for details</small>
+                        </div>
+                    </div>
+                `);
+            });
+        }
+
         function loadSpots(lotId) {
             $.get(`/api/lot/${lotId}`, function(lot) {
-                $('#lotName').text(`Manage Spots for ${lot.location}`);
                 const spotsTable = $('#spotsTable');
                 spotsTable.empty();
 
                 if (lot.spots) {
                     lot.spots.forEach(spot => {
-                        let statusColor = '';
+                        let statusBadge = '';
                         if (spot.status === 'available') {
-                            statusColor = 'text-success';
+                            statusBadge = '<span class="badge badge-success">Available</span>';
                         } else if (spot.status === 'occupied') {
-                            statusColor = 'text-danger';
+                            statusBadge = '<span class="badge badge-danger">Occupied</span>';
                         } else if (spot.status === 'maintenance') {
-                            statusColor = 'text-warning';
+                            statusBadge = '<span class="badge badge-warning">Maintenance</span>';
                         }
 
-                        const price = spot.price_per_hour ? `$${parseFloat(spot.price_per_hour).toFixed(2)}` : 'Default';
+                        const displayType = spot.type === 'motorcycle' ? 'small' : spot.type;
+                        const price = spot.price_per_hour ? `₹${spot.price_per_hour}` : 'Default';
+
                         spotsTable.append(`
                             <tr>
                                 <td>${spot.spot_id}</td>
-                                <td>${spot.type === 'motorcycle' ? 'small' : spot.type}</td>
-                                <td class="${statusColor}">${spot.status}</td>
+                                <td><span class="badge badge-info">${displayType.toUpperCase()}</span></td>
+                                <td>${statusBadge}</td>
                                 <td>${price}</td>
                                 <td>
-                                    <button class="btn btn-sm btn-primary" onclick="editSpot('${spot.spot_id}', '${spot.type}', '${spot.status}', '${spot.price_per_hour || ''}')">Edit</button>
-                                    <button class="btn btn-sm btn-danger" onclick="deleteSpot('${lot.lot_id}', '${spot.spot_id}')">Delete</button>
+                                    <button class="btn btn-sm btn-outline-primary" onclick="editSpot('${spot.spot_id}', '${spot.type}', '${spot.status}', '${spot.price_per_hour || ''}')" title="Edit">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger" onclick="deleteSpot('${lot.lot_id}', '${spot.spot_id}')" title="Delete">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
                                 </td>
                             </tr>
                         `);

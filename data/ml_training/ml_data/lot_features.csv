@@ -1,0 +1,6 @@
+lot_id,location,category,total_capacity,has_ev_charging,has_security,distance_to_transit_meters,base_price_car,base_price_bike,base_price_large
+1,Downtown Mall,mall,150,True,True,340,45,13.5,67.5
+2,Office District,office,200,True,True,1426,60,18.0,90.0
+3,Residential Area,residential,80,False,True,1804,25,7.5,37.5
+4,Transit Hub,transit,300,True,True,415,35,10.5,52.5
+5,Hospital Complex,hospital,120,True,True,1120,50,15.0,75.0

@@ -1,0 +1,45 @@
+PRICE OPTIMIZATION MODEL
+======================================================================
+
+Trained: 2025-11-13 18:47:06
+Algorithm: Gradient Boosting Regressor
+Training samples: 8,688
+Test samples: 2,172
+
+PERFORMANCE METRICS
+----------------------------------------------------------------------
+Test MAE:  ₹0.05
+Test RMSE: ₹0.14
+Test R²:   1.0000
+
+FEATURES
+----------------------------------------------------------------------
+  - lot_id
+  - spot_type_encoded
+  - base_price
+  - demand_encoded
+  - occupancy_rate
+  - bookings_last_hour
+  - competitor_avg_price
+  - hour
+  - day_of_week
+  - booking_conversion_rate
+  - time_until_full
+  - hour_sin
+  - hour_cos
+  - day_sin
+  - day_cos
+  - price_to_competitor_ratio
+
+TOP 10 FEATURE IMPORTANCE
+----------------------------------------------------------------------
+  base_price......................... 0.7679
+  competitor_avg_price............... 0.0774
+  price_to_competitor_ratio.......... 0.0655
+  occupancy_rate..................... 0.0403
+  booking_conversion_rate............ 0.0252
+  bookings_last_hour................. 0.0116
+  time_until_full.................... 0.0086
+  lot_id............................. 0.0028
+  demand_encoded..................... 0.0008
+  spot_type_encoded.................. 0.0001

@@ -1,3 +1,10 @@
+# Database files
+parking.db
+*.db-journal
+
+# KEEP demo.db - it should be deployed with pre-loaded data
+!demo.db
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

@@ -69,6 +69,15 @@
     </nav>
 
     <div class="container">
+        <!-- Demo Account Banner -->
+        {% if session.get('is_demo') %}
+        <div class="alert alert-warning alert-dismissible fade show" role="alert">
+            <strong>🎯 Demo Account Mode</strong> - You're viewing pre-generated data with complete analytics. 
+            Other users create their own separate data when they register.
+            <button type="button" class="close" data-dismiss="alert">&times;</button>
+        </div>
+        {% endif %}
+        
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h1>My Parking Lots</h1>
             <button class="btn btn-primary" data-toggle="modal" data-target="#lotModal">
@@ -76,6 +85,12 @@
             </button>
         </div>
         <div id="alert-container"></div>
+        
+        <!-- AI Insights Banner -->
+        <div id="aiStatusBanner" class="alert alert-success" style="display:none;">
+            <strong>🤖 AI Features Active</strong> - Dynamic pricing and occupancy predictions enabled
+        </div>
+        
         <div class="row" id="lotsContainer">
             <!-- Lots will be loaded here -->
         </div>
@@ -182,6 +197,16 @@
             const userNameDisplay = document.getElementById('userNameDisplay');
             const logoutBtn = document.getElementById('logoutBtn');
             const loadingSpinner = document.getElementById('loading');
+            
+            // Check AI status and show banner if models loaded (non-blocking)
+            fetch('/api/ai/status')
+                .then(res => res.json())
+                .then(aiStatus => {
+                    if (aiStatus.ai_enabled) {
+                        document.getElementById('aiStatusBanner').style.display = 'block';
+                    }
+                })
+                .catch(e => console.log('AI status check failed'));
 
             let lotMap, lotMarker;
 
@@ -298,9 +323,27 @@
                         lotsContainer.innerHTML = '<p class="text-center col-12">You have not added any parking lots yet.</p>';
                         return;
                     }
-                    lots.forEach(lot => {
+                    lots.forEach(async lot => {
                         const freeSpots = lot.total_spots - lot.occupied_spots;
                         const occupancyPercent = lot.total_spots > 0 ? Math.round((lot.occupied_spots / lot.total_spots) * 100) : 0;
+                        
+                        // Get AI predictions for this lot
+                        let aiPrediction = '';
+                        try {
+                            const aiRes = await fetch(`/api/ai/predict-occupancy/${lot.lot_id}`);
+                            const aiData = await aiRes.json();
+                            if (aiData.success) {
+                                const pred = aiData.prediction;
+                                aiPrediction = `
+                                    <div class="small text-muted mt-1">
+                                        🤖 AI Prediction: ${pred.occupancy_rate}% occupancy expected
+                                    </div>
+                                `;
+                            }
+                        } catch (e) {
+                            console.log('AI prediction unavailable');
+                        }
+                        
                         const card = document.createElement('div');
                         card.className = 'col-12 mb-3';
                         card.innerHTML = `
@@ -319,6 +362,7 @@
                                                             ${freeSpots} Free
                                                         </div>
                                                     </div>
+                                                    ${aiPrediction}
                                                 </div>
                                                 <div class="text-muted small" style="min-width: 100px;">
                                                     <strong>${lot.total_spots}</strong> Total Spots

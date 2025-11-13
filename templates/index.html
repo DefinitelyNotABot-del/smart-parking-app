@@ -43,6 +43,7 @@
             <div id="alert-container"></div>
             <div id="loginForm">
                 <h3 class="text-center mb-4">Login</h3>
+                
                 <form id="login-form">
                     <div class="form-group">
                         <label for="loginEmail">Email address</label>
@@ -54,11 +55,27 @@
                     </div>
                     <button type="submit" class="btn btn-primary btn-block">Login</button>
                 </form>
-                <p class="text-center mt-3">Don't have an account? <span class="form-toggle-link" onclick="toggleForms()">Sign up</span></p>
+                
+                <!-- Demo Account Info - Collapsible -->
+                <div class="text-center mt-3">
+                    <small>
+                        <a href="#" onclick="event.preventDefault(); document.getElementById('demoInfo').style.display = document.getElementById('demoInfo').style.display === 'none' ? 'block' : 'none';" class="text-muted">
+                            🎯 View Demo Credentials
+                        </a>
+                    </small>
+                    <div id="demoInfo" style="display:none;" class="alert alert-light mt-2 small">
+                        <strong>Owner:</strong> demo.owner@smartparking.com<br>
+                        <strong>Customer:</strong> demo.customer@smartparking.com<br>
+                        <strong>Password:</strong> demo123
+                    </div>
+                </div>
+                
+                <p class="text-center mt-2">Don't have an account? <span class="form-toggle-link" onclick="toggleForms()">Sign up</span></p>
             </div>
 
             <div id="signupForm">
                 <h3 class="text-center mb-4">Sign Up</h3>
+                
                 <form id="signup-form">
                     <div class="form-group">
                         <label for="signupName">Full Name</label>

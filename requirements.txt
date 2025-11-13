@@ -91,3 +91,7 @@ psycopg2-binary
 # Added for Azure Key Vault Integration
 azure-keyvault-secrets
 azure-identity
+
+# Machine Learning Dependencies for AI Models
+scikit-learn==1.6.1
+joblib==1.4.2
