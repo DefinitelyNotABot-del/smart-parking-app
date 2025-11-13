@@ -1236,38 +1236,11 @@ def health_check():
     return jsonify({
         "status": "healthy",
         "database": "connected" if os.path.exists(DB_FILE) else "not_initialized",
-        "gemini_api": "configured" if os.getenv('GEMINI_API_KEY') else "not_configured",
-        "gemini_key_length": len(os.getenv('GEMINI_API_KEY', '')) if os.getenv('GEMINI_API_KEY') else 0
+        "nlp_parser": "local_rule_based"
     })
 
-@app.route('/api/test-gemini', methods=['GET'])
-async def test_gemini():
-    """Test Gemini API directly"""
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        return jsonify({"error": "GEMINI_API_KEY not configured"}), 500
-    
-    try:
-        if genai is None:
-            return jsonify({"error": "google-generativeai not installed"}), 500
-            
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        
-        test_prompt = "Say 'Hello, I am working!' in JSON format with a key 'message'"
-        response = await model.generate_content_async(test_prompt)
-        
-        return jsonify({
-            "success": True,
-            "raw_response": response.text,
-            "api_key_prefix": api_key[:10] + "..." if len(api_key) > 10 else "too_short"
-        })
-    except Exception as e:
-        return jsonify({
-            "error": str(e),
-            "error_type": type(e).__name__,
-            "api_key_prefix": api_key[:10] + "..." if len(api_key) > 10 else "too_short"
-        }), 500
+# Gemini API test endpoint removed - not using external AI APIs
+# All AI features now use local ML models (scikit-learn)
 
 # ==================== AI PREDICTION API ENDPOINTS ====================
 

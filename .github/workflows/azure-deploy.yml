@@ -51,7 +51,6 @@ jobs:
             --name ${{ env.AZURE_WEBAPP_NAME }} \
             --resource-group smart-parking-rg \
             --settings \
-              GEMINI_API_KEY="${{ secrets.GEMINI_API_KEY }}" \
               FLASK_SECRET_KEY="${{ secrets.FLASK_SECRET_KEY }}" \
               SCM_DO_BUILD_DURING_DEPLOYMENT=true \
               ENABLE_ORYX_BUILD=true \
