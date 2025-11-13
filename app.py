@@ -54,24 +54,45 @@ def get_db_path():
         return DEMO_DB_PATH
     return REGULAR_DB_PATH
 
-# --- AI Model Loading ---
+# --- AI Model Loading (Lazy Loading for Azure F1 Free Tier) ---
 ML_MODELS_DIR = "data/ml_training"
 AI_MODELS = {}
 
-def load_ai_models():
-    """Load all trained ML models at startup"""
+def load_model(model_name):
+    """Lazy load ML models on-demand to avoid startup timeout on Azure F1"""
     global AI_MODELS
+    
+    if model_name in AI_MODELS:
+        return AI_MODELS[model_name]
+    
+    model_files = {
+        'occupancy': 'occupancy_model.pkl',
+        'pricing': 'pricing_model.pkl',
+        'preference': 'preference_model.pkl',
+        'preference_scaler': 'preference_scaler.pkl',
+        'forecasting': 'forecasting_model.pkl'
+    }
+    
+    if model_name not in model_files:
+        return None
+    
     try:
-        AI_MODELS['occupancy'] = joblib.load(os.path.join(ML_MODELS_DIR, 'occupancy_model.pkl'))
-        AI_MODELS['pricing'] = joblib.load(os.path.join(ML_MODELS_DIR, 'pricing_model.pkl'))
-        AI_MODELS['preference'] = joblib.load(os.path.join(ML_MODELS_DIR, 'preference_model.pkl'))
-        AI_MODELS['preference_scaler'] = joblib.load(os.path.join(ML_MODELS_DIR, 'preference_scaler.pkl'))
-        AI_MODELS['forecasting'] = joblib.load(os.path.join(ML_MODELS_DIR, 'forecasting_model.pkl'))
-        app.logger.info("✓ All AI models loaded successfully")
-        return True
+        model_path = os.path.join(ML_MODELS_DIR, model_files[model_name])
+        if not os.path.exists(model_path):
+            app.logger.warning(f"Model file not found: {model_path}")
+            return None
+            
+        AI_MODELS[model_name] = joblib.load(model_path)
+        app.logger.info(f"✓ Loaded {model_name} model on-demand")
+        return AI_MODELS[model_name]
     except Exception as e:
-        app.logger.warning(f"AI models not loaded: {e}")
-        return False
+        app.logger.warning(f"Failed to load {model_name} model: {e}")
+        return None
+
+def load_ai_models():
+    """Optional: Pre-load all models (used for local development)"""
+    # On Azure F1, models are lazy-loaded instead
+    app.logger.info("AI models configured for lazy loading (Azure F1 optimization)")
 
 # --- Database Configuration & Management ---
 DB_FILE = "data/parking.db"
@@ -288,7 +309,8 @@ def get_future_bookings(lot_id, spot_id, limit=20):
 
 def predict_occupancy(lot_id, target_datetime=None):
     """Predict occupancy rate for a parking lot at a specific time"""
-    if 'occupancy' not in AI_MODELS:
+    model = load_model('occupancy')
+    if model is None:
         return None
     
     if target_datetime is None:
@@ -323,7 +345,7 @@ def predict_occupancy(lot_id, target_datetime=None):
     }
     
     df = pd.DataFrame([features])
-    prediction = AI_MODELS['occupancy'].predict(df)[0]
+    prediction = model.predict(df)[0]
     
     return {
         'occupancy_rate': round(prediction, 1),
@@ -334,8 +356,9 @@ def predict_occupancy(lot_id, target_datetime=None):
 
 def optimize_price(lot_id, spot_type, current_occupancy_rate, base_price):
     """Recommend optimal price based on demand and occupancy"""
-    if 'pricing' not in AI_MODELS:
-        return base_price
+    model = load_model('pricing')
+    if model is None:
+        return {'optimal_price': base_price}
     
     now = datetime.now()
     
@@ -379,9 +402,9 @@ def optimize_price(lot_id, spot_type, current_occupancy_rate, base_price):
     }
     
     df = pd.DataFrame([features])
-    optimal_price = AI_MODELS['pricing'].predict(df)[0]
+    optimal_price = model.predict(df)[0]
     
-    return round(optimal_price, 2)
+    return {'optimal_price': round(optimal_price, 2)}
 
 def recommend_spot_for_user(user_id, available_spots):
     """Recommend best parking spot based on user preferences"""
@@ -423,8 +446,13 @@ def recommend_spot_for_user(user_id, available_spots):
         }
         
         df = pd.DataFrame([features])
-        df_scaled = AI_MODELS['preference_scaler'].transform(df)
-        score = AI_MODELS['preference'].predict(df_scaled)[0]
+        scaler = load_model('preference_scaler')
+        model = load_model('preference')
+        if scaler and model:
+            df_scaled = scaler.transform(df)
+            score = model.predict(df_scaled)[0]
+        else:
+            score = 0.5  # Default score
         
         scores.append({
             'spot': spot,
@@ -501,7 +529,11 @@ def forecast_peak_hours(lot_id, hours_ahead=3):
     }
     
     df = pd.DataFrame([features])
-    peak_prediction = AI_MODELS['forecasting'].predict(df)[0]
+    model = load_model('forecasting')
+    if model:
+        peak_prediction = model.predict(df)[0]
+    else:
+        peak_prediction = current_occupancy  # Fallback to current
     
     return {
         'current_occupancy': round(current_occupancy, 1),
