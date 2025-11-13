@@ -29,6 +29,7 @@
                             <th>Spot ID</th>
                             <th>Type</th>
                             <th>Status</th>
+                            <th>Price/Hour</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -68,6 +69,10 @@
                                 <option value="maintenance">Maintenance</option>
                             </select>
                         </div>
+                        <div class="form-group">
+                            <label for="spotPrice">Price per Hour ($)</label>
+                            <input type="number" step="0.01" class="form-control" id="spotPrice" placeholder="Leave blank for default" min="0">
+                        </div>
                         <button type="submit" class="btn btn-primary">Save</button>
                     </form>
                 </div>
@@ -96,6 +101,7 @@
             $('#spotModal').on('hidden.bs.modal', function () {
                 $('#spotForm')[0].reset();
                 $('#spotId').val('');
+                $('#spotPrice').val('');
                 $('.modal-title').text('Add/Edit Spot');
             });
 
@@ -104,14 +110,18 @@
                 const spotId = $('#spotId').val();
                 const type = $('#spotType').val();
                 const status = $('#spotStatus').val();
+                const price = $('#spotPrice').val();
                 const url = spotId ? `/api/lot/${lotId}/spot/${spotId}` : `/api/lot/${lotId}/spot`;
                 const method = spotId ? 'PUT' : 'POST';
+
+                const data = { type: type, status: status };
+                if (price) data.price_per_hour = parseFloat(price);
 
                 $.ajax({
                     url: url,
                     method: method,
                     contentType: 'application/json',
-                    data: JSON.stringify({ type: type, status: status }),
+                    data: JSON.stringify(data),
                     success: function(response) {
                         console.log('Spot saved successfully:', response);
                         loadSpots(lotId);
@@ -144,13 +154,15 @@
                             statusColor = 'text-warning';
                         }
 
+                        const price = spot.price_per_hour ? `$${parseFloat(spot.price_per_hour).toFixed(2)}` : 'Default';
                         spotsTable.append(`
                             <tr>
                                 <td>${spot.spot_id}</td>
                                 <td>${spot.type === 'motorcycle' ? 'small' : spot.type}</td>
                                 <td class="${statusColor}">${spot.status}</td>
+                                <td>${price}</td>
                                 <td>
-                                    <button class="btn btn-sm btn-primary" onclick="editSpot('${spot.spot_id}', '${spot.type}', '${spot.status}')">Edit</button>
+                                    <button class="btn btn-sm btn-primary" onclick="editSpot('${spot.spot_id}', '${spot.type}', '${spot.status}', '${spot.price_per_hour || ''}')">Edit</button>
                                     <button class="btn btn-sm btn-danger" onclick="deleteSpot('${lot.lot_id}', '${spot.spot_id}')">Delete</button>
                                 </td>
                             </tr>
@@ -160,11 +172,11 @@
             });
         }
 
-        function editSpot(spotId, type, status) {
+        function editSpot(spotId, type, status, price) {
             $('#spotId').val(spotId);
-            // Ensure 'motorcycle' type from backend is mapped to 'small' in the UI for editing
             $('#spotType').val(type === 'motorcycle' ? 'small' : type);
             $('#spotStatus').val(status);
+            $('#spotPrice').val(price && price !== 'null' && price !== 'undefined' ? price : '');
             $('#spotModal').modal('show');
         }
 

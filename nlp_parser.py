@@ -176,7 +176,8 @@ class ParkingNLPParser:
             'latitude': best_spot['latitude'],
             'longitude': best_spot['longitude'],
             'location': best_spot['location'],
-            'type': best_spot['type']
+            'type': best_spot['type'],
+            'price_per_hour': best_spot.get('price_per_hour')
         }
 
 # Global parser instance

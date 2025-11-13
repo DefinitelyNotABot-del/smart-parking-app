@@ -11,6 +11,7 @@ import json
 from flask_socketio import SocketIO
 import logging
 import click
+from datetime import datetime, timedelta
 from nlp_parser import parser as nlp_parser
 
 # --- App Initialization ---
@@ -21,6 +22,16 @@ app = Flask(__name__)
 # CRITICAL: Load secret key from environment variable for production
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev_fallback_secret_key_12345')
 socketio = SocketIO(app)
+
+DEFAULT_PRICING = {
+    'large': 50.0,
+    'car': 40.0,
+    'motorcycle': 15.0,
+    'bike': 15.0,
+    'truck': 75.0
+}
+
+TIME_FORMAT = "%Y-%m-%dT%H:%M"
 
 # --- Database Configuration & Management ---
 DB_FILE = "data/parking.db"
@@ -76,20 +87,61 @@ def init_db(force_reset=False):
             location TEXT NOT NULL,
             latitude REAL,
             longitude REAL,
-            FOREIGN KEY (user_id) REFERENCES users (user_id)
+            FOREIGN KEY (user_id) REFERENCES users (user_id),
+            UNIQUE(user_id, location)
         )
     """)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS spots (
-            spot_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            lot_id INTEGER,
+            spot_id INTEGER NOT NULL,
+            lot_id INTEGER NOT NULL,
             type TEXT NOT NULL,
             status TEXT NOT NULL,
             booked_by_user_id INTEGER,
+            price_per_hour REAL DEFAULT 30.0,
+            display_order INTEGER DEFAULT 0,
+            PRIMARY KEY (lot_id, spot_id),
             FOREIGN KEY (lot_id) REFERENCES lots (lot_id),
             FOREIGN KEY (booked_by_user_id) REFERENCES users (user_id)
         )
     """)
+
+    try:
+        cursor.execute("ALTER TABLE spots ADD COLUMN price_per_hour REAL DEFAULT 30.0")
+        db.commit()
+    except sqlite3.OperationalError:
+        db.rollback()
+
+    try:
+        cursor.execute("ALTER TABLE spots ADD COLUMN display_order INTEGER DEFAULT 0")
+        db.commit()
+    except sqlite3.OperationalError:
+        db.rollback()
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS bookings (
+            booking_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            lot_id INTEGER NOT NULL,
+            spot_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            start_time TEXT NOT NULL,
+            end_time TEXT NOT NULL,
+            price_per_hour REAL NOT NULL,
+            total_cost REAL NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (lot_id, spot_id) REFERENCES spots (lot_id, spot_id),
+            FOREIGN KEY (user_id) REFERENCES users (user_id)
+        )
+    """)
+
+    try:
+        cursor.execute("ALTER TABLE bookings ADD COLUMN lot_id INTEGER")
+        db.commit()
+    except sqlite3.OperationalError:
+        db.rollback()
+
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_bookings_spot_time ON bookings (spot_id, start_time, end_time)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_bookings_user ON bookings (user_id)")
 
     db.commit()
 
@@ -98,6 +150,89 @@ def init_db_command():
     """CLI command to clear the existing data and create new tables."""
     init_db(force_reset=True)
     click.echo('Initialized the database.')
+
+
+def parse_datetime(value):
+    """Parse ISO datetime strings coming from the client."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        try:
+            return datetime.strptime(value, TIME_FORMAT)
+        except ValueError:
+            return None
+
+
+def format_datetime(dt):
+    return dt.strftime(TIME_FORMAT)
+
+
+def default_booking_window():
+    """Return a default start/end (next hour) for search fallback."""
+    start = datetime.utcnow().replace(second=0, microsecond=0)
+    end = start + timedelta(hours=1)
+    return start, end
+
+
+def get_duration_hours(start_dt, end_dt):
+    duration = (end_dt - start_dt).total_seconds() / 3600
+    if duration <= 0:
+        raise ValueError("End time must be after start time")
+    return round(duration, 2)
+
+
+def calculate_total_cost(price_per_hour, start_dt, end_dt):
+    hours = get_duration_hours(start_dt, end_dt)
+    return round(price_per_hour * hours, 2)
+
+
+def get_spot_default_price(spot_type):
+    return DEFAULT_PRICING.get(spot_type, DEFAULT_PRICING.get('car', 40.0))
+
+
+def coerce_price(value, fallback):
+    """Convert inputs to a sensible price with graceful fallback."""
+    try:
+        if value is None or value == "":
+            return round(float(fallback), 2)
+        price = float(value)
+        if price < 0:
+            raise ValueError("Price must be non-negative")
+        return round(price, 2)
+    except (TypeError, ValueError):
+        app.logger.warning(f"Invalid price input '{value}', using fallback {fallback}")
+        return round(float(fallback), 2)
+
+
+def spot_is_available(lot_id, spot_id, start_iso, end_iso):
+    cursor = get_cursor()
+    cursor.execute(
+        """
+        SELECT COUNT(*) FROM bookings
+        WHERE lot_id = ? AND spot_id = ?
+          AND NOT (? <= start_time OR ? >= end_time)
+        """,
+        (lot_id, spot_id, end_iso, start_iso)
+    )
+    return cursor.fetchone()[0] == 0
+
+
+def get_future_bookings(lot_id, spot_id, limit=20):
+    cursor = get_cursor()
+    cursor.execute(
+        """
+        SELECT b.start_time, b.end_time, b.total_cost
+        FROM bookings b
+        JOIN spots s ON b.spot_id = s.spot_id AND b.lot_id = s.lot_id
+        WHERE s.lot_id = ? AND s.spot_id = ? AND b.end_time >= ?
+        ORDER BY b.start_time ASC
+        LIMIT ?
+        """,
+        (lot_id, spot_id, format_datetime(datetime.utcnow()), limit)
+    )
+    return [dict(row) for row in cursor.fetchall()]
 
 
 # --- AI Smart Search Function ---
@@ -149,20 +284,50 @@ async def ai_smart_search(user_request, available_spots):
             "explanation": f"Quick pick - API error"
         }
 
-# --- Booking Function ---
-def book_spot(spot_id, user_id):
-    """Updates a row in the 'spots' table to book a spot."""
-    sql = f"UPDATE spots SET status = 'occupied', booked_by_user_id = ? WHERE spot_id = ? AND status = 'available'"
+# --- Booking Utilities ---
+def create_booking(lot_id, spot_id, user_id, start_dt, end_dt, price_per_hour):
+    start_iso = format_datetime(start_dt)
+    end_iso = format_datetime(end_dt)
+
+    if not spot_is_available(lot_id, spot_id, start_iso, end_iso):
+        return None, "Spot is no longer available for that time window."
+
+    total_cost = calculate_total_cost(price_per_hour, start_dt, end_dt)
+
+    db = get_db()
+    cursor = db.cursor()
     try:
-        db = get_db()
-        cursor = db.cursor()
-        cursor.execute(sql, (user_id, spot_id))
+        cursor.execute(
+            """
+            INSERT INTO bookings (lot_id, spot_id, user_id, start_time, end_time, price_per_hour, total_cost, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                lot_id,
+                spot_id,
+                user_id,
+                start_iso,
+                end_iso,
+                price_per_hour,
+                total_cost,
+                format_datetime(datetime.utcnow())
+            )
+        )
         db.commit()
-        return cursor.rowcount > 0
-    except Exception as e:
-        app.logger.error(f"Error creating booking for spot {spot_id}: {e}")
-        get_db().rollback()
-        return False
+    except Exception as exc:
+        app.logger.error(f"Booking insert failed for lot {lot_id}, spot {spot_id}: {exc}")
+        db.rollback()
+        return None, "Failed to create booking."
+
+    return {
+        "booking_id": cursor.lastrowid,
+        "lot_id": lot_id,
+        "spot_id": spot_id,
+        "start_time": start_iso,
+        "end_time": end_iso,
+        "total_cost": total_cost,
+        "price_per_hour": price_per_hour
+    }, None
 
 # --- Flask Routes ---
 @app.route('/')
@@ -206,12 +371,26 @@ def get_customer_bookings():
         return jsonify({"message": "Unauthorized"}), 401
 
     cursor = get_cursor()
-    cursor.execute(f"""
-        SELECT s.spot_id, s.type, s.status, l.location
-        FROM spots s JOIN lots l ON s.lot_id = l.lot_id
-        WHERE s.booked_by_user_id = ?
-    """, (user_id,))
-    bookings = [dict(row) for row in cursor.fetchall()]
+    cursor.execute(
+        """
+        SELECT b.booking_id, b.lot_id, b.spot_id, s.type, l.location, b.start_time, b.end_time,
+               b.total_cost, b.price_per_hour
+        FROM bookings b
+        JOIN spots s ON b.lot_id = s.lot_id AND b.spot_id = s.spot_id
+        JOIN lots l ON s.lot_id = l.lot_id
+        WHERE b.user_id = ?
+        ORDER BY b.start_time DESC
+        """,
+        (user_id,)
+    )
+
+    bookings = []
+    for row in cursor.fetchall():
+        booking = dict(row)
+        booking['start_time'] = row['start_time']
+        booking['end_time'] = row['end_time']
+        bookings.append(booking)
+
     return jsonify(bookings)
 
 @app.route('/api/register', methods=['POST'])
@@ -289,40 +468,104 @@ def logout_user():
 
 @app.route('/api/smart-search', methods=['POST'])
 def smart_search_route():
-    """Natural language parking search - understands context without hallucinating"""
-    user_request = request.get_json().get('user_request', '').strip()
-    app.logger.info(f"Smart search request: '{user_request}'")
-    
+    """Natural language parking search with time-based availability and pricing."""
+    payload = request.get_json() or {}
+    user_request = (payload.get('user_request') or '').strip()
+    requested_start = payload.get('start_time')
+    requested_end = payload.get('end_time')
+
+    app.logger.info(f"Smart search request: '{user_request}' {requested_start=} {requested_end=}")
+
     if not user_request:
         return jsonify({"message": "Please enter a search query"}), 400
-    
+
+    start_dt = parse_datetime(requested_start)
+    end_dt = parse_datetime(requested_end)
+    if not start_dt or not end_dt or end_dt <= start_dt:
+        start_dt, end_dt = default_booking_window()
+    start_iso = format_datetime(start_dt)
+    end_iso = format_datetime(end_dt)
+
     cursor = get_cursor()
-    cursor.execute("SELECT s.spot_id, l.location, s.type, l.latitude, l.longitude FROM spots s JOIN lots l ON s.lot_id = l.lot_id WHERE s.status = 'available'")
-    
+    cursor.execute(
+        """
+        SELECT s.spot_id, s.type, s.price_per_hour, s.display_order, l.location, l.latitude, l.longitude, l.lot_id
+        FROM spots s
+        JOIN lots l ON s.lot_id = l.lot_id
+        ORDER BY s.display_order ASC
+        """
+    )
+
     available_spots = []
     for row in cursor.fetchall():
-        available_spots.append({
-            'spot_id': str(row['spot_id']),
-            'location': row['location'], 
-            'type': row['type'],
-            'latitude': row['latitude'],
-            'longitude': row['longitude']
-        })
+        if spot_is_available(row['lot_id'], row['spot_id'], start_iso, end_iso):
+            available_spots.append({
+                'spot_id': str(row['spot_id']),
+                'location': row['location'],
+                'type': row['type'],
+                'latitude': row['latitude'],
+                'longitude': row['longitude'],
+                'price_per_hour': row['price_per_hour'],
+                'lot_id': row['lot_id'],
+                'display_order': row['display_order']
+            })
 
-    app.logger.info(f"Found {len(available_spots)} available spots: {[s['location'] for s in available_spots]}")
+    app.logger.info(f"Found {len(available_spots)} time-available spots")
 
     if not available_spots:
-        return jsonify({"message": "No available parking spots found. All spots are currently occupied."}), 404
+        return jsonify({
+            "message": "No parking spots available for the selected time window.",
+            "start_time": start_iso,
+            "end_time": end_iso
+        }), 404
 
-    # Use smart local NLP parser - no API, no hallucinations!
     result = nlp_parser.find_best_match(user_request, available_spots)
-    
     app.logger.info(f"NLP match result: {result}")
-    
-    # Check if we found a match
+
     if 'error' in result:
+        result['start_time'] = start_iso
+        result['end_time'] = end_iso
         return jsonify(result), 404
-    
+
+    selected_spot_id = int(result['spot_id'])
+    selected_spot = next((spot for spot in available_spots if int(spot['spot_id']) == selected_spot_id), None)
+    if not selected_spot:
+        return jsonify({
+            "message": "Matching spot not available for the requested window. Please try a different time."}), 404
+
+    price_per_hour = selected_spot['price_per_hour'] or get_spot_default_price(selected_spot['type'])
+    total_cost = calculate_total_cost(price_per_hour, start_dt, end_dt)
+    lot_id = selected_spot['lot_id']
+
+    result.update({
+        'price_per_hour': price_per_hour,
+        'estimated_cost': total_cost,
+        'start_time': start_iso,
+        'end_time': end_iso,
+        'duration_hours': get_duration_hours(start_dt, end_dt),
+        'lot_id': lot_id,
+        'bookings': get_future_bookings(lot_id, selected_spot_id)
+    })
+
+    # Provide top alternatives for the UI timeline/visualization
+    alternatives = []
+    for spot in available_spots:
+        if int(spot['spot_id']) == selected_spot_id:
+            continue
+        alternatives.append({
+            'spot_id': spot['spot_id'],
+            'location': spot['location'],
+            'type': spot['type'],
+            'price_per_hour': spot['price_per_hour'],
+            'lot_id': spot['lot_id'],
+            'bookings': get_future_bookings(spot['lot_id'], int(spot['spot_id']), limit=5)
+        })
+        if len(alternatives) >= 4:
+            break
+
+    result['alternatives'] = alternatives
+    result['available_spots_count'] = len(available_spots)
+
     return jsonify(result)
 
 @app.route('/api/book-spot', methods=['POST'])
@@ -331,38 +574,51 @@ def book_spot_route():
     if not user_id:
         return jsonify({"message": "Unauthorized"}), 401
 
-    spot_id = request.get_json().get('spot_id')
-    if book_spot(spot_id, user_id):
-        socketio.emit('status_change', {'spot_id': spot_id, 'status': 'occupied'})
-        return jsonify({"message": f"Booking confirmed for Spot {spot_id}!"})
-    else:
-        return jsonify({"message": "Booking failed."}), 500
+    payload = request.get_json() or {}
+    spot_id = payload.get('spot_id')
+    start_dt = parse_datetime(payload.get('start_time'))
+    end_dt = parse_datetime(payload.get('end_time'))
+
+    if not spot_id or not start_dt or not end_dt:
+        return jsonify({"message": "Missing booking parameters."}), 400
+
+    if end_dt <= start_dt:
+        return jsonify({"message": "End time must be after start time."}), 400
+
+    lot_id = payload.get('lot_id')
+    if not lot_id:
+        return jsonify({"message": "Missing lot_id parameter."}), 400
+
+    cursor = get_cursor()
+    cursor.execute("SELECT price_per_hour, type FROM spots WHERE lot_id = ? AND spot_id = ?", (lot_id, spot_id))
+    spot_row = cursor.fetchone()
+    if not spot_row:
+        return jsonify({"message": "Spot not found."}), 404
+
+    price_per_hour = spot_row['price_per_hour'] or get_spot_default_price(spot_row['type'])
+    booking, error = create_booking(int(lot_id), int(spot_id), user_id, start_dt, end_dt, price_per_hour)
+    if error:
+        return jsonify({"message": error}), 409
+
+    socketio.emit('status_change', {
+        'lot_id': lot_id,
+        'spot_id': spot_id,
+        'status': 'booked',
+        'start_time': booking['start_time'],
+        'end_time': booking['end_time']
+    })
+
+    return jsonify({
+        "message": "Booking confirmed!",
+        "booking": booking
+    })
 
 @app.route('/api/end-parking', methods=['POST'])
 def end_parking_route():
-    user_id = session.get('user_id')
-    if not user_id: return jsonify({"message": "Unauthorized"}), 401
-
-    spot_id = request.get_json().get('spot_id')
-    cursor = get_cursor()
-    cursor.execute(f"SELECT s.booked_by_user_id, l.user_id as lot_owner_id FROM spots s JOIN lots l ON s.lot_id = l.lot_id WHERE s.spot_id = ?", (spot_id,))
-    result = cursor.fetchone()
-
-    if not result: return jsonify({"message": "Spot not found"}), 404
-
-    if user_id != result['booked_by_user_id'] and user_id != result['lot_owner_id']:
-        return jsonify({"message": "Unauthorized to end parking for this spot"}), 403
-
-    try:
-        db = get_db()
-        cursor.execute(f"UPDATE spots SET status = 'available', booked_by_user_id = NULL WHERE spot_id = ?", (spot_id,))
-        db.commit()
-        socketio.emit('status_change', {'spot_id': spot_id, 'status': 'available'})
-        return jsonify({"message": f"Parking ended for Spot {spot_id}!"})
-    except Exception as e:
-        app.logger.error(f"Error ending parking for spot {spot_id}: {e}")
-        get_db().rollback()
-        return jsonify({"message": "Failed to end parking."}), 500
+    """Legacy endpoint retained for compatibility."""
+    return jsonify({
+        "message": "Bookings now end automatically when the reserved time finishes. No manual action needed."
+    }), 410
 
 @app.route('/api/lots', methods=['GET'])
 def get_lots():
@@ -373,12 +629,48 @@ def get_lots():
     cursor = get_cursor()
     cursor.execute(f"SELECT * FROM lots WHERE user_id = ?", (user_id,))
     lots = [dict(row) for row in cursor.fetchall()]
+    now_iso = format_datetime(datetime.utcnow())
     for lot in lots:
-        cursor.execute(f"SELECT type, COUNT(*) as count FROM spots WHERE lot_id = ? GROUP BY type", (lot['lot_id'],))
-        lot['spots'] = {row['type']: row['count'] for row in cursor.fetchall()}
-        lot['total_spots'] = sum(lot['spots'].values())
-        cursor.execute(f"SELECT COUNT(*) FROM spots WHERE lot_id = ? AND status = 'occupied'", (lot['lot_id'],))
+        cursor.execute(
+            "SELECT spot_id, type, price_per_hour FROM spots WHERE lot_id = ?",
+            (lot['lot_id'],)
+        )
+        spot_rows = cursor.fetchall()
+        lot['total_spots'] = len(spot_rows)
+        type_counts = {}
+        price_groups = {}
+        prices = []
+        for row in spot_rows:
+            type_counts[row['type']] = type_counts.get(row['type'], 0) + 1
+            normalized_price = coerce_price(row['price_per_hour'], get_spot_default_price(row['type']))
+            prices.append(normalized_price)
+            price_groups.setdefault(row['type'], []).append(normalized_price)
+        lot['spots'] = type_counts
+        lot['average_price_per_hour'] = round(sum(prices) / len(prices), 2) if prices else 0
+        lot['price_by_type'] = {
+            spot_type: round(sum(values) / len(values), 2)
+            for spot_type, values in price_groups.items()
+        }
+
+        cursor.execute(
+            """
+            SELECT COUNT(*) FROM bookings b
+            JOIN spots s ON b.spot_id = s.spot_id
+            WHERE s.lot_id = ? AND ? BETWEEN b.start_time AND b.end_time
+            """,
+            (lot['lot_id'], now_iso)
+        )
         lot['occupied_spots'] = cursor.fetchone()[0]
+
+        cursor.execute(
+            """
+            SELECT COUNT(*) FROM bookings b
+            JOIN spots s ON b.spot_id = s.spot_id
+            WHERE s.lot_id = ? AND b.start_time >= ?
+            """,
+            (lot['lot_id'], now_iso)
+        )
+        lot['upcoming_bookings'] = cursor.fetchone()[0]
     
     response = jsonify(lots)
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
@@ -399,13 +691,31 @@ def create_lot():
     cursor.execute(sql, params)
     lot_id = cursor.lastrowid
 
-    spots = []
-    for _ in range(int(data.get('large_spots', 0))): spots.append((lot_id, 'large', 'available'))
-    for _ in range(int(data.get('motorcycle_spots', 0))): spots.append((lot_id, 'motorcycle', 'available'))
+    large_price = coerce_price(
+        data.get('large_price_per_hour'),
+        get_spot_default_price('large')
+    )
+    motorcycle_price = coerce_price(
+        data.get('motorcycle_price_per_hour'),
+        get_spot_default_price('motorcycle')
+    )
+    large_total = int(data.get('large_spots') or 0)
+    motorcycle_total = int(data.get('motorcycle_spots') or 0)
 
-    if spots:
-        spot_sql = f"INSERT INTO spots (lot_id, type, status) VALUES (?, ?, ?)"
-        cursor.executemany(spot_sql, spots)
+    # Create spots with per-lot IDs and display_order
+    spot_num = 1
+    for i in range(large_total):
+        cursor.execute(
+            "INSERT INTO spots (lot_id, spot_id, type, status, price_per_hour, display_order) VALUES (?, ?, ?, ?, ?, ?)",
+            (lot_id, spot_num, 'large', 'available', large_price, spot_num)
+        )
+        spot_num += 1
+    for i in range(motorcycle_total):
+        cursor.execute(
+            "INSERT INTO spots (lot_id, spot_id, type, status, price_per_hour, display_order) VALUES (?, ?, ?, ?, ?, ?)",
+            (lot_id, spot_num, 'motorcycle', 'available', motorcycle_price, spot_num)
+        )
+        spot_num += 1
 
     db.commit()
     return jsonify({"message": "Lot created successfully", "lot_id": lot_id})
@@ -421,8 +731,13 @@ def get_lot(lot_id):
     if not lot: return jsonify({"message": "Lot not found or unauthorized"}), 404
     
     lot = dict(lot)
-    cursor.execute(f"SELECT * FROM spots WHERE lot_id = ?", (lot_id,))
-    lot['spots'] = [dict(row) for row in cursor.fetchall()]
+    cursor.execute(f"SELECT spot_id, type, status, price_per_hour, display_order FROM spots WHERE lot_id = ? ORDER BY display_order ASC", (lot_id,))
+    spots = []
+    for row in cursor.fetchall():
+        spot = dict(row)
+        spot['bookings'] = get_future_bookings(lot_id, row['spot_id'])
+        spots.append(spot)
+    lot['spots'] = spots
     lot['total_spots'] = len(lot['spots'])
     return jsonify(lot)
 
@@ -442,14 +757,38 @@ def update_lot(lot_id):
     params = (data.get('location'), data.get('latitude'), data.get('longitude'), lot_id)
     cursor.execute(f"UPDATE lots SET location = ?, latitude = ?, longitude = ? WHERE lot_id = ?", params)
 
-    cursor.execute(f"DELETE FROM spots WHERE lot_id = ?", (lot_id,))
-    spots = []
-    for _ in range(int(data.get('large_spots', 0))): spots.append((lot_id, 'large', 'available'))
-    for _ in range(int(data.get('motorcycle_spots', 0))): spots.append((lot_id, 'motorcycle', 'available'))
+    cursor.execute(f"SELECT spot_id FROM spots WHERE lot_id = ?", (lot_id,))
+    existing_spots = [row['spot_id'] for row in cursor.fetchall()]
+    for spot_id_value in existing_spots:
+        cursor.execute("DELETE FROM bookings WHERE spot_id = ?", (spot_id_value,))
 
-    if spots:
-        spot_sql = f"INSERT INTO spots (lot_id, type, status) VALUES (?, ?, ?)"
-        cursor.executemany(spot_sql, spots)
+    cursor.execute(f"DELETE FROM spots WHERE lot_id = ?", (lot_id,))
+
+    large_price = coerce_price(
+        data.get('large_price_per_hour'),
+        get_spot_default_price('large')
+    )
+    motorcycle_price = coerce_price(
+        data.get('motorcycle_price_per_hour'),
+        get_spot_default_price('motorcycle')
+    )
+    large_total = int(data.get('large_spots') or 0)
+    motorcycle_total = int(data.get('motorcycle_spots') or 0)
+
+    # Create spots with per-lot IDs and display_order
+    spot_num = 1
+    for i in range(large_total):
+        cursor.execute(
+            "INSERT INTO spots (lot_id, spot_id, type, status, price_per_hour, display_order) VALUES (?, ?, ?, ?, ?, ?)",
+            (lot_id, spot_num, 'large', 'available', large_price, spot_num)
+        )
+        spot_num += 1
+    for i in range(motorcycle_total):
+        cursor.execute(
+            "INSERT INTO spots (lot_id, spot_id, type, status, price_per_hour, display_order) VALUES (?, ?, ?, ?, ?, ?)",
+            (lot_id, spot_num, 'motorcycle', 'available', motorcycle_price, spot_num)
+        )
+        spot_num += 1
 
     db.commit()
     return jsonify({"message": "Lot updated successfully"})
@@ -465,6 +804,11 @@ def delete_lot(lot_id):
     lot_owner = cursor.fetchone()
     if not lot_owner or lot_owner['user_id'] != user_id:
         return jsonify({"message": "Unauthorized to delete this lot"}), 403
+
+    cursor.execute(f"SELECT spot_id FROM spots WHERE lot_id = ?", (lot_id,))
+    spot_ids = [row['spot_id'] for row in cursor.fetchall()]
+    for spot_id_value in spot_ids:
+        cursor.execute("DELETE FROM bookings WHERE spot_id = ?", (spot_id_value,))
 
     cursor.execute(f"DELETE FROM spots WHERE lot_id = ?", (lot_id,))
     cursor.execute(f"DELETE FROM lots WHERE lot_id = ?", (lot_id,))
@@ -488,21 +832,33 @@ def add_spot(lot_id):
         return jsonify({"message": "Unauthorized to add spots to this lot"}), 403
 
     data = request.get_json()
-    spot_type = data.get('type')
+    spot_type = (data.get('type') or 'car').lower()
     spot_status = data.get('status', 'available')
-    
-    # Map 'small' to 'motorcycle' for consistency with backend
+    price_per_hour = data.get('price_per_hour')
+
     if spot_type == 'small':
         spot_type = 'motorcycle'
-    
+
+    price_per_hour = coerce_price(price_per_hour, get_spot_default_price(spot_type))
+    display_order = data.get('display_order', 999)
+
+    # Get next spot_id for this lot
+    cursor.execute("SELECT MAX(spot_id) FROM spots WHERE lot_id = ?", (lot_id,))
+    max_spot = cursor.fetchone()[0]
+    next_spot_id = (max_spot or 0) + 1
+
     cursor.execute(
-        f"INSERT INTO spots (lot_id, type, status) VALUES (?, ?, ?)",
-        (lot_id, spot_type, spot_status)
+        f"INSERT INTO spots (lot_id, spot_id, type, status, price_per_hour, display_order) VALUES (?, ?, ?, ?, ?, ?)",
+        (lot_id, next_spot_id, spot_type, spot_status, price_per_hour, display_order)
     )
     db.commit()
     
     socketio.emit('status_change', {'lot_id': lot_id, 'action': 'spot_added'})
-    return jsonify({"message": "Spot added successfully", "spot_id": cursor.lastrowid})
+    return jsonify({
+        "message": "Spot added successfully",
+        "spot_id": next_spot_id,
+        "price_per_hour": price_per_hour
+    })
 
 @app.route('/api/lot/<int:lot_id>/spot/<int:spot_id>', methods=['PUT'])
 def update_spot(lot_id, spot_id):
@@ -520,21 +876,39 @@ def update_spot(lot_id, spot_id):
         return jsonify({"message": "Unauthorized to update spots in this lot"}), 403
 
     data = request.get_json()
-    spot_type = data.get('type')
-    spot_status = data.get('status')
-    
-    # Map 'small' to 'motorcycle' for consistency with backend
+
+    cursor.execute(
+        "SELECT type, status, display_order FROM spots WHERE lot_id = ? AND spot_id = ?",
+        (lot_id, spot_id)
+    )
+    existing_spot = cursor.fetchone()
+    if not existing_spot:
+        return jsonify({"message": "Spot not found"}), 404
+
+    spot_type = data.get('type', existing_spot['type'])
+    spot_status = data.get('status', existing_spot['status'] or 'available')
+    price_per_hour = data.get('price_per_hour')
+    display_order = data.get('display_order', existing_spot['display_order'])
+
     if spot_type == 'small':
         spot_type = 'motorcycle'
-    
+
+    if not spot_type:
+        spot_type = existing_spot['type']
+
+    price_per_hour = coerce_price(price_per_hour, get_spot_default_price(spot_type))
+
     cursor.execute(
-        f"UPDATE spots SET type = ?, status = ? WHERE spot_id = ? AND lot_id = ?",
-        (spot_type, spot_status, spot_id, lot_id)
+        f"UPDATE spots SET type = ?, status = ?, price_per_hour = ?, display_order = ? WHERE lot_id = ? AND spot_id = ?",
+        (spot_type, spot_status, price_per_hour, display_order, lot_id, spot_id)
     )
     db.commit()
     
     socketio.emit('status_change', {'lot_id': lot_id, 'spot_id': spot_id, 'action': 'spot_updated'})
-    return jsonify({"message": "Spot updated successfully"})
+    return jsonify({
+        "message": "Spot updated successfully",
+        "price_per_hour": price_per_hour
+    })
 
 @app.route('/api/lot/<int:lot_id>/spot/<int:spot_id>', methods=['DELETE'])
 def delete_spot(lot_id, spot_id):
@@ -551,11 +925,41 @@ def delete_spot(lot_id, spot_id):
     if not lot_owner or lot_owner['user_id'] != user_id:
         return jsonify({"message": "Unauthorized to delete spots in this lot"}), 403
 
-    cursor.execute(f"DELETE FROM spots WHERE spot_id = ? AND lot_id = ?", (spot_id, lot_id))
+    cursor.execute(f"DELETE FROM bookings WHERE lot_id = ? AND spot_id = ?", (lot_id, spot_id))
+    cursor.execute(f"DELETE FROM spots WHERE lot_id = ? AND spot_id = ?", (lot_id, spot_id))
     db.commit()
     
     socketio.emit('status_change', {'lot_id': lot_id, 'spot_id': spot_id, 'action': 'spot_deleted'})
     return jsonify({"message": "Spot deleted successfully"})
+
+@app.route('/api/lot/<int:lot_id>/bookings', methods=['GET'])
+def get_lot_bookings(lot_id):
+    user_id = session.get('user_id')
+    if not user_id or session.get('role') != 'owner':
+        return jsonify({"message": "Unauthorized"}), 401
+
+    cursor = get_cursor()
+    cursor.execute("SELECT user_id FROM lots WHERE lot_id = ?", (lot_id,))
+    lot_row = cursor.fetchone()
+    if not lot_row or lot_row['user_id'] != user_id:
+        return jsonify({"message": "Unauthorized"}), 403
+
+    cursor.execute(
+        """
+        SELECT b.booking_id, b.spot_id, b.start_time, b.end_time, b.total_cost, b.price_per_hour,
+               u.name as customer_name
+        FROM bookings b
+        JOIN users u ON b.user_id = u.user_id
+        WHERE b.start_time >= ? AND b.spot_id IN (
+            SELECT spot_id FROM spots WHERE lot_id = ?
+        )
+        ORDER BY b.start_time ASC
+        """,
+        (format_datetime(datetime.utcnow() - timedelta(days=1)), lot_id)
+    )
+
+    bookings = [dict(row) for row in cursor.fetchall()]
+    return jsonify(bookings)
 
 @app.route('/api/validate-booking/<spot_id>')
 def validate_booking(spot_id):
@@ -563,10 +967,17 @@ def validate_booking(spot_id):
     if not user_id: return jsonify({"valid": False}), 401
 
     cursor = get_cursor()
-    cursor.execute(f"SELECT booked_by_user_id FROM spots WHERE spot_id = ?", (spot_id,))
-    result = cursor.fetchone()
+    now_iso = format_datetime(datetime.utcnow())
+    cursor.execute(
+        """
+        SELECT COUNT(*) FROM bookings
+        WHERE spot_id = ? AND user_id = ? AND ? BETWEEN start_time AND end_time
+        """,
+        (spot_id, user_id, now_iso)
+    )
+    is_valid = cursor.fetchone()[0] > 0
 
-    return jsonify({"valid": result and result['booked_by_user_id'] == user_id})
+    return jsonify({"valid": is_valid})
 
 @app.route('/api/reset-database', methods=['POST'])
 def reset_database():

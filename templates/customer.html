@@ -37,6 +37,16 @@
                 <h3>Find a Parking Spot</h3>
                 <div class="search-container">
                     <input type="text" id="naturalLanguageSearch" class="form-control" placeholder="e.g., 'A spot near Garuda Mall'">
+                    <div class="form-row mt-2">
+                        <div class="col">
+                            <label for="startTime" class="small">Start Time</label>
+                            <input type="datetime-local" id="startTime" class="form-control form-control-sm">
+                        </div>
+                        <div class="col">
+                            <label for="endTime" class="small">End Time</label>
+                            <input type="datetime-local" id="endTime" class="form-control form-control-sm">
+                        </div>
+                    </div>
                     <button id="searchBtn" class="btn btn-primary btn-block mt-2">Search</button>
                     <div id="loadingSpinner" class="spinner-border text-primary mt-2" role="status" style="display:none;">
                         <span class="sr-only">Loading...</span>
@@ -73,6 +83,21 @@
         const searchBtn = document.getElementById('searchBtn');
         const loadingSpinner = document.getElementById('loadingSpinner');
         const logoutBtn = document.getElementById('logoutBtn');
+        const startTimeInput = document.getElementById('startTime');
+        const endTimeInput = document.getElementById('endTime');
+
+        function setDefaultTimeWindow() {
+            const now = new Date();
+            const start = new Date(now.getTime() + 15 * 60000);
+            const end = new Date(start.getTime() + 60 * 60000);
+            const toLocalInput = (date) => {
+                const tzOff = date.getTimezoneOffset();
+                const adjusted = new Date(date.getTime() - (tzOff * 60000));
+                return adjusted.toISOString().slice(0, 16);
+            };
+            startTimeInput.value = toLocalInput(start);
+            endTimeInput.value = toLocalInput(end);
+        }
 
         async function updateCustomerPage() {
             // Fetch user info
@@ -170,7 +195,11 @@
                 const response = await fetch('/api/smart-search', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user_request: userQuery })
+                    body: JSON.stringify({ 
+                        user_request: userQuery,
+                        start_time: startTimeInput.value,
+                        end_time: endTimeInput.value
+                    })
                 });
 
                 const result = await response.json();
@@ -202,7 +231,12 @@
                             const bookResponse = await fetch('/api/book-spot', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ spot_id: result.spot_id })
+                                body: JSON.stringify({ 
+                                    lot_id: result.lot_id,
+                                    spot_id: result.spot_id,
+                                    start_time: result.start_time,
+                                    end_time: result.end_time
+                                })
                             });
                             // After booking, refresh the whole page state
                             updateCustomerPage();
@@ -285,6 +319,7 @@
         });
 
         // Initial page load
+        setDefaultTimeWindow();
         updateCustomerPage();
     </script>
     <script>
