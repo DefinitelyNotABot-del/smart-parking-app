@@ -26,12 +26,80 @@ app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev_fallback_secret_key_12345')
 socketio = SocketIO(app)
 
+# =============================================================================
+# DATABASE SCHEMA CONSTANTS - SINGLE SOURCE OF TRUTH
+# =============================================================================
+# All database table names and column names are defined here as constants.
+# Use these constants throughout the codebase to prevent typos and ensure
+# consistency. This prevents issues like owner_id vs user_id mismatches.
+#
+# NAMING CONVENTION:
+#   - Table constants: TABLE_<NAME> (e.g., TABLE_USERS)
+#   - Column constants: COL_<TABLE>_<COLUMN> (e.g., COL_USER_ID)
+#   - Type constants: SPOT_TYPE_<TYPE>, ROLE_<ROLE>, etc.
+# =============================================================================
+
+# --- Table Names ---
+TABLE_USERS = 'users'
+TABLE_LOTS = 'lots'
+TABLE_SPOTS = 'spots'
+TABLE_BOOKINGS = 'bookings'
+
+# Column Names - Users Table
+COL_USER_ID = 'user_id'
+COL_USER_NAME = 'name'
+COL_USER_EMAIL = 'email'
+COL_USER_PASSWORD_HASH = 'password_hash'
+COL_USER_ROLE = 'role'
+
+# Column Names - Lots Table
+COL_LOT_ID = 'lot_id'
+COL_LOT_USER_ID = 'user_id'  # Foreign key to users
+COL_LOT_LOCATION = 'location'
+COL_LOT_LATITUDE = 'latitude'
+COL_LOT_LONGITUDE = 'longitude'
+
+# Column Names - Spots Table
+COL_SPOT_ID = 'spot_id'
+COL_SPOT_LOT_ID = 'lot_id'  # Foreign key to lots
+COL_SPOT_TYPE = 'type'
+COL_SPOT_STATUS = 'status'
+COL_SPOT_BOOKED_BY = 'booked_by_user_id'
+COL_SPOT_PRICE = 'price_per_hour'
+COL_SPOT_DISPLAY_ORDER = 'display_order'
+
+# Column Names - Bookings Table
+COL_BOOKING_ID = 'booking_id'
+COL_BOOKING_LOT_ID = 'lot_id'
+COL_BOOKING_SPOT_ID = 'spot_id'
+COL_BOOKING_USER_ID = 'user_id'
+COL_BOOKING_START = 'start_time'
+COL_BOOKING_END = 'end_time'
+COL_BOOKING_STATUS = 'booking_status'
+COL_BOOKING_CREATED = 'created_at'
+
+# Spot Types
+SPOT_TYPE_LARGE = 'large'
+SPOT_TYPE_MOTORCYCLE = 'motorcycle'
+SPOT_TYPE_CAR = 'car'
+SPOT_TYPE_BIKE = 'bike'
+SPOT_TYPE_TRUCK = 'truck'
+
+# Spot Status
+SPOT_STATUS_AVAILABLE = 'available'
+SPOT_STATUS_OCCUPIED = 'occupied'
+SPOT_STATUS_MAINTENANCE = 'maintenance'
+
+# User Roles
+ROLE_CUSTOMER = 'customer'
+ROLE_OWNER = 'owner'
+
 DEFAULT_PRICING = {
-    'large': 50.0,
-    'car': 40.0,
-    'motorcycle': 15.0,
-    'bike': 15.0,
-    'truck': 75.0
+    SPOT_TYPE_LARGE: 50.0,
+    SPOT_TYPE_CAR: 40.0,
+    SPOT_TYPE_MOTORCYCLE: 15.0,
+    SPOT_TYPE_BIKE: 15.0,
+    SPOT_TYPE_TRUCK: 75.0
 }
 
 TIME_FORMAT = "%Y-%m-%dT%H:%M"
@@ -146,72 +214,72 @@ def init_db_for_path(db_path, force_reset=False):
         cursor.execute("DROP TABLE IF EXISTS lots")
         cursor.execute("DROP TABLE IF EXISTS users")
 
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            email TEXT NOT NULL UNIQUE,
-            password_hash TEXT NOT NULL
+    cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS {TABLE_USERS} (
+            {COL_USER_ID} INTEGER PRIMARY KEY AUTOINCREMENT,
+            {COL_USER_NAME} TEXT NOT NULL,
+            {COL_USER_EMAIL} TEXT NOT NULL UNIQUE,
+            {COL_USER_PASSWORD_HASH} TEXT NOT NULL
         )
     """)
     try:
-        cursor.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'customer'")
+        cursor.execute(f"ALTER TABLE {TABLE_USERS} ADD COLUMN {COL_USER_ROLE} TEXT NOT NULL DEFAULT '{ROLE_CUSTOMER}'")
     except sqlite3.OperationalError:
         db.rollback()
     else:
         db.commit()
     
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS lots (
-            lot_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            location TEXT NOT NULL,
-            latitude REAL,
-            longitude REAL,
-            FOREIGN KEY (user_id) REFERENCES users (user_id),
-            UNIQUE(user_id, location)
+    cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS {TABLE_LOTS} (
+            {COL_LOT_ID} INTEGER PRIMARY KEY AUTOINCREMENT,
+            {COL_LOT_USER_ID} INTEGER,
+            {COL_LOT_LOCATION} TEXT NOT NULL,
+            {COL_LOT_LATITUDE} REAL,
+            {COL_LOT_LONGITUDE} REAL,
+            FOREIGN KEY ({COL_LOT_USER_ID}) REFERENCES {TABLE_USERS} ({COL_USER_ID}),
+            UNIQUE({COL_LOT_USER_ID}, {COL_LOT_LOCATION})
         )
     """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS spots (
-            spot_id INTEGER NOT NULL,
-            lot_id INTEGER NOT NULL,
-            type TEXT NOT NULL,
-            status TEXT NOT NULL,
-            booked_by_user_id INTEGER,
-            price_per_hour REAL DEFAULT 30.0,
-            display_order INTEGER DEFAULT 0,
-            PRIMARY KEY (lot_id, spot_id),
-            FOREIGN KEY (lot_id) REFERENCES lots (lot_id),
-            FOREIGN KEY (booked_by_user_id) REFERENCES users (user_id)
+    cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS {TABLE_SPOTS} (
+            {COL_SPOT_ID} INTEGER NOT NULL,
+            {COL_SPOT_LOT_ID} INTEGER NOT NULL,
+            {COL_SPOT_TYPE} TEXT NOT NULL,
+            {COL_SPOT_STATUS} TEXT NOT NULL,
+            {COL_SPOT_BOOKED_BY} INTEGER,
+            {COL_SPOT_PRICE} REAL DEFAULT 30.0,
+            {COL_SPOT_DISPLAY_ORDER} INTEGER DEFAULT 0,
+            PRIMARY KEY ({COL_SPOT_LOT_ID}, {COL_SPOT_ID}),
+            FOREIGN KEY ({COL_SPOT_LOT_ID}) REFERENCES {TABLE_LOTS} ({COL_LOT_ID}),
+            FOREIGN KEY ({COL_SPOT_BOOKED_BY}) REFERENCES {TABLE_USERS} ({COL_USER_ID})
         )
     """)
 
     try:
-        cursor.execute("ALTER TABLE spots ADD COLUMN price_per_hour REAL DEFAULT 30.0")
+        cursor.execute(f"ALTER TABLE {TABLE_SPOTS} ADD COLUMN {COL_SPOT_PRICE} REAL DEFAULT 30.0")
         db.commit()
     except sqlite3.OperationalError:
         db.rollback()
 
     try:
-        cursor.execute("ALTER TABLE spots ADD COLUMN display_order INTEGER DEFAULT 0")
+        cursor.execute(f"ALTER TABLE {TABLE_SPOTS} ADD COLUMN {COL_SPOT_DISPLAY_ORDER} INTEGER DEFAULT 0")
         db.commit()
     except sqlite3.OperationalError:
         db.rollback()
 
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bookings (
-            booking_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            lot_id INTEGER NOT NULL,
-            spot_id INTEGER NOT NULL,
-            user_id INTEGER NOT NULL,
-            start_time TEXT NOT NULL,
-            end_time TEXT NOT NULL,
-            price_per_hour REAL NOT NULL,
+    cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS {TABLE_BOOKINGS} (
+            {COL_BOOKING_ID} INTEGER PRIMARY KEY AUTOINCREMENT,
+            {COL_BOOKING_LOT_ID} INTEGER NOT NULL,
+            {COL_BOOKING_SPOT_ID} INTEGER NOT NULL,
+            {COL_BOOKING_USER_ID} INTEGER NOT NULL,
+            {COL_BOOKING_START} TEXT NOT NULL,
+            {COL_BOOKING_END} TEXT NOT NULL,
+            {COL_SPOT_PRICE} REAL NOT NULL,
             total_cost REAL NOT NULL,
-            created_at TEXT NOT NULL,
-            FOREIGN KEY (lot_id, spot_id) REFERENCES spots (lot_id, spot_id),
-            FOREIGN KEY (user_id) REFERENCES users (user_id)
+            {COL_BOOKING_CREATED} TEXT NOT NULL,
+            FOREIGN KEY ({COL_BOOKING_LOT_ID}, {COL_BOOKING_SPOT_ID}) REFERENCES {TABLE_SPOTS} ({COL_SPOT_LOT_ID}, {COL_SPOT_ID}),
+            FOREIGN KEY ({COL_BOOKING_USER_ID}) REFERENCES {TABLE_USERS} ({COL_USER_ID})
         )
     """)
 
