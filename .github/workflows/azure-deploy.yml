@@ -41,21 +41,26 @@ jobs:
 
       - name: Stop App Service (avoid 409 conflicts)
         run: |
+          echo "🛑 Stopping app service to prevent deployment conflicts..."
           az webapp stop \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
-            --resource-group smart-parking-rg || true
+            --resource-group smart-parking-rg
+          echo "⏳ Waiting 10 seconds for graceful shutdown..."
+          sleep 10
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
           package: .
-          
+
       - name: Start App Service
         run: |
+          echo "▶️ Starting app service..."
           az webapp start \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
             --resource-group smart-parking-rg
+          echo "✅ App service started successfully"
 
       - name: Configure App Settings
         run: |
