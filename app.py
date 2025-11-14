@@ -777,6 +777,9 @@ def login_user():
     if not email or not password:
         return jsonify({"message": "Missing required fields"}), 400
 
+    # Clear any existing session to prevent demo/user confusion
+    session.clear()
+
     # Check if this is a demo account FIRST - determines which DB to use
     is_demo = is_demo_account(email)
     
@@ -846,6 +849,18 @@ def get_me():
 def logout_user():
     session.clear()
     return jsonify({"message": "Logout successful"})
+
+@app.route('/api/debug/session')
+def debug_session():
+    """Debug endpoint to check current session state"""
+    return jsonify({
+        "user_id": session.get('user_id'),
+        "name": session.get('name'),
+        "email": session.get('email'),
+        "role": session.get('role'),
+        "is_demo": session.get('is_demo'),
+        "database": DEMO_DB_PATH if session.get('is_demo') else REGULAR_DB_PATH
+    })
 
 @app.route('/api/smart-search', methods=['POST'])
 def smart_search_route():
