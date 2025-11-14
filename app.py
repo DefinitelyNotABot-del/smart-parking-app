@@ -754,7 +754,7 @@ def switch_role(new_role):
     if new_role in ['customer', 'owner']:
         if new_role == 'owner':
             cursor = get_cursor()
-            cursor.execute(f"SELECT COUNT(*) FROM lots WHERE owner_id = ?", (session['user_id'],))
+            cursor.execute(f"SELECT COUNT(*) FROM lots WHERE user_id = ?", (session['user_id'],))
             if cursor.fetchone()[0] == 0:
                 return redirect(url_for('customer_page'))
         session['role'] = new_role
@@ -769,7 +769,7 @@ def get_me():
         return jsonify({"message": "Unauthorized"}), 401
     
     cursor = get_cursor()
-    cursor.execute(f"SELECT COUNT(*) FROM lots WHERE owner_id = ?", (user_id,))
+    cursor.execute(f"SELECT COUNT(*) FROM lots WHERE user_id = ?", (user_id,))
     lot_count = cursor.fetchone()[0]
     
     return jsonify({'name': session.get('name'), 'role': session.get('role'), 'is_owner': lot_count > 0})
@@ -939,7 +939,7 @@ def get_lots():
         return jsonify({"message": "Unauthorized"}), 401
 
     cursor = get_cursor()
-    cursor.execute(f"SELECT * FROM lots WHERE owner_id = ?", (user_id,))
+    cursor.execute(f"SELECT * FROM lots WHERE user_id = ?", (user_id,))
     lots = [dict(row) for row in cursor.fetchall()]
     now_iso = format_datetime(datetime.utcnow())
     for lot in lots:
@@ -997,7 +997,7 @@ def create_lot():
     db = get_db()
     cursor = db.cursor()
     
-    sql = f"INSERT INTO lots (owner_id, location, latitude, longitude) VALUES (?, ?, ?, ?)"
+    sql = f"INSERT INTO lots (user_id, location, latitude, longitude) VALUES (?, ?, ?, ?)"
     params = (user_id, data.get('location'), data.get('latitude'), data.get('longitude'))
     
     cursor.execute(sql, params)
@@ -1038,7 +1038,7 @@ def get_lot(lot_id):
     if not user_id: return jsonify({"message": "Unauthorized"}), 401
 
     cursor = get_cursor()
-    cursor.execute(f"SELECT * FROM lots WHERE lot_id = ? AND owner_id = ?", (lot_id, user_id))
+    cursor.execute(f"SELECT * FROM lots WHERE lot_id = ? AND user_id = ?", (lot_id, user_id))
     lot = cursor.fetchone()
     if not lot: return jsonify({"message": "Lot not found or unauthorized"}), 404
     
@@ -1112,9 +1112,9 @@ def delete_lot(lot_id):
 
     db = get_db()
     cursor = db.cursor()
-    cursor.execute(f"SELECT owner_id FROM lots WHERE lot_id = ?", (lot_id,))
+    cursor.execute(f"SELECT user_id FROM lots WHERE lot_id = ?", (lot_id,))
     lot_owner = cursor.fetchone()
-    if not lot_owner or lot_owner['owner_id'] != user_id:
+    if not lot_owner or lot_owner['user_id'] != user_id:
         return jsonify({"message": "Unauthorized to delete this lot"}), 403
 
     cursor.execute(f"SELECT spot_id FROM spots WHERE lot_id = ?", (lot_id,))
@@ -1138,9 +1138,9 @@ def add_spot(lot_id):
     cursor = db.cursor()
     
     # Verify lot ownership
-    cursor.execute(f"SELECT owner_id FROM lots WHERE lot_id = ?", (lot_id,))
+    cursor.execute(f"SELECT user_id FROM lots WHERE lot_id = ?", (lot_id,))
     lot_owner = cursor.fetchone()
-    if not lot_owner or lot_owner['owner_id'] != user_id:
+    if not lot_owner or lot_owner['user_id'] != user_id:
         return jsonify({"message": "Unauthorized to add spots to this lot"}), 403
 
     data = request.get_json()
@@ -1181,9 +1181,9 @@ def update_spot(lot_id, spot_id):
     cursor = db.cursor()
     
     # Verify lot ownership
-    cursor.execute(f"SELECT owner_id FROM lots WHERE lot_id = ?", (lot_id,))
+    cursor.execute(f"SELECT user_id FROM lots WHERE lot_id = ?", (lot_id,))
     lot_owner = cursor.fetchone()
-    if not lot_owner or lot_owner['owner_id'] != user_id:
+    if not lot_owner or lot_owner['user_id'] != user_id:
         return jsonify({"message": "Unauthorized to update spots in this lot"}), 403
 
     data = request.get_json()
@@ -1230,9 +1230,9 @@ def delete_spot(lot_id, spot_id):
     cursor = db.cursor()
     
     # Verify lot ownership
-    cursor.execute(f"SELECT owner_id FROM lots WHERE lot_id = ?", (lot_id,))
+    cursor.execute(f"SELECT user_id FROM lots WHERE lot_id = ?", (lot_id,))
     lot_owner = cursor.fetchone()
-    if not lot_owner or lot_owner['owner_id'] != user_id:
+    if not lot_owner or lot_owner['user_id'] != user_id:
         return jsonify({"message": "Unauthorized to delete spots in this lot"}), 403
 
     cursor.execute(f"DELETE FROM bookings WHERE lot_id = ? AND spot_id = ?", (lot_id, spot_id))
@@ -1249,9 +1249,9 @@ def get_lot_bookings(lot_id):
         return jsonify({"message": "Unauthorized"}), 401
 
     cursor = get_cursor()
-    cursor.execute("SELECT owner_id FROM lots WHERE lot_id = ?", (lot_id,))
+    cursor.execute("SELECT user_id FROM lots WHERE lot_id = ?", (lot_id,))
     lot_row = cursor.fetchone()
-    if not lot_row or lot_row['owner_id'] != user_id:
+    if not lot_row or lot_row['user_id'] != user_id:
         return jsonify({"message": "Unauthorized"}), 403
 
     cursor.execute(
@@ -1424,15 +1424,15 @@ def get_lot_analytics(lot_id):
     
     try:
         cursor = get_cursor()
-        owner_id = session['user_id']
+        user_id = session['user_id']
         
-        app.logger.info(f"Loading analytics for lot {lot_id}, owner {owner_id}")
+        app.logger.info(f"Loading analytics for lot {lot_id}, owner {user_id}")
         
         # Get lot details - FILTERED BY OWNER
-        cursor.execute("SELECT * FROM lots WHERE lot_id = ? AND owner_id = ?", (lot_id, owner_id))
+        cursor.execute("SELECT * FROM lots WHERE lot_id = ? AND user_id = ?", (lot_id, user_id))
         lot = cursor.fetchone()
         if not lot:
-            app.logger.warning(f"Lot {lot_id} not found for owner {owner_id}")
+            app.logger.warning(f"Lot {lot_id} not found for owner {user_id}")
             return jsonify({"message": "Lot not found or you don't have permission"}), 404
         
         # Get current month revenue
