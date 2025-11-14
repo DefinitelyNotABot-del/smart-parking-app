@@ -108,10 +108,13 @@ def get_db():
     """Opens a new database connection if there is none yet for the current application context."""
     if 'db' not in g:
         os.makedirs("data", exist_ok=True)
-        # Use demo.db for demo accounts, parking.db for regular users
-        # Default to REGULAR_DB_PATH if no session context (e.g., during init)
+        # Determine which database to use based on session
+        # Demo accounts ALWAYS use demo.db, regular users ALWAYS use parking.db
         try:
-            db_path = get_db_path() if session.get('is_demo') else REGULAR_DB_PATH
+            if session.get('is_demo'):
+                db_path = DEMO_DB_PATH
+            else:
+                db_path = REGULAR_DB_PATH
         except RuntimeError:
             # Outside request context (e.g., during app startup)
             db_path = REGULAR_DB_PATH
@@ -673,6 +676,10 @@ def register_user():
     if not name or not email or not password:
         return jsonify({"message": "Missing required fields"}), 400
     
+    # PREVENT signup with demo account emails
+    if is_demo_account(email):
+        return jsonify({"message": "Cannot sign up with demo account email. Demo accounts are pre-created."}), 403
+    
     # Validate role
     if role not in ['customer', 'owner']:
         role = 'customer'
@@ -681,14 +688,18 @@ def register_user():
     sql = f"INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, ?)"
 
     try:
-        db = get_db()
-        cursor = db.cursor()
+        # ALWAYS use parking.db for new signups (never demo.db)
+        conn = sqlite3.connect(REGULAR_DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
         cursor.execute(sql, (name, email, hashed_password, role))
-        db.commit()
+        conn.commit()
+        conn.close()
         return jsonify({"message": "User registered successfully"})
-    except (sqlite3.IntegrityError, Exception):
-        get_db().rollback()
+    except sqlite3.IntegrityError:
         return jsonify({"message": "Email already exists"}), 400
+    except Exception as e:
+        return jsonify({"message": f"Registration failed: {str(e)}"}), 500
 
 @app.route('/api/login', methods=['POST'])
 def login_user():
@@ -698,36 +709,42 @@ def login_user():
     if not email or not password:
         return jsonify({"message": "Missing required fields"}), 400
 
-    # Check if this is a demo account FIRST
+    # Check if this is a demo account FIRST - determines which DB to use
     is_demo = is_demo_account(email)
     
-    # Connect to appropriate database
+    # Route to appropriate database based on email
     db_path = DEMO_DB_PATH if is_demo else REGULAR_DB_PATH
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
     
-    cursor.execute("SELECT * FROM users WHERE email = ?", (email,))
-    user = cursor.fetchone()
-    conn.close()
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT * FROM users WHERE email = ?", (email,))
+        user = cursor.fetchone()
+        conn.close()
 
-    if user and check_password_hash(user['password_hash'], password):
-        session['user_id'], session['name'] = user['user_id'], user['name']
-        session['role'] = requested_role if requested_role in ['customer', 'owner'] else user.get('role', 'customer')
-        session['is_demo'] = is_demo  # Track if demo account
-        
-        if session['is_demo']:
-            app.logger.info(f"Demo account logged in: {email} (using demo.db)")
+        if user and check_password_hash(user['password_hash'], password):
+            session['user_id'], session['name'] = user['user_id'], user['name']
+            session['role'] = requested_role if requested_role in ['customer', 'owner'] else user.get('role', 'customer')
+            session['is_demo'] = is_demo  # Track if demo account for DB routing
+            session['email'] = email  # Store email for DB routing
+            
+            if session['is_demo']:
+                app.logger.info(f"✓ Demo account logged in: {email} (using demo.db)")
+            else:
+                app.logger.info(f"✓ Regular user logged in: {email} (using parking.db)")
+            
+            return jsonify({
+                "message": "Login successful", 
+                "redirect": url_for(f'{session["role"]}_page'),
+                "is_demo": session['is_demo']
+            })
         else:
-            app.logger.info(f"Regular user logged in: {email} (using parking.db)")
-        
-        return jsonify({
-            "message": "Login successful", 
-            "redirect": url_for(f'{session["role"]}_page'),
-            "is_demo": session['is_demo']
-        })
-    else:
-        return jsonify({"message": "Invalid email or password"}), 401
+            return jsonify({"message": "Invalid email or password"}), 401
+    except Exception as e:
+        app.logger.error(f"Login error: {e}")
+        return jsonify({"message": "Login failed. Please try again."}), 500
 
 @app.route('/switch-role/<new_role>')
 def switch_role(new_role):
