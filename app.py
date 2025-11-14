@@ -1554,13 +1554,17 @@ if __name__ == '__main__':
 
 # Initialize database and AI models on startup (for production)
 with app.app_context():
-    # Initialize both databases if they don't exist
+    # Initialize regular database if it doesn't exist
     if not os.path.exists(REGULAR_DB_PATH):
         init_db_for_path(REGULAR_DB_PATH)
         app.logger.info(f"Initialized regular database: {REGULAR_DB_PATH}")
     
+    # Demo database should come pre-populated from git
+    # Only create if missing (shouldn't happen in production)
     if not os.path.exists(DEMO_DB_PATH):
+        app.logger.warning(f"Demo database missing! Creating empty one at {DEMO_DB_PATH}")
         init_db_for_path(DEMO_DB_PATH)
-        app.logger.info(f"Initialized demo database: {DEMO_DB_PATH}")
+    else:
+        app.logger.info(f"Using pre-populated demo database: {DEMO_DB_PATH}")
     
     load_ai_models()
