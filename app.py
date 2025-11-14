@@ -125,9 +125,10 @@ def get_cursor():
     """Gets a cursor from the request-bound database connection."""
     return get_db().cursor()
 
-def init_db(force_reset=False):
-    """Creates the database tables."""
-    db = get_db()
+def init_db_for_path(db_path, force_reset=False):
+    """Creates the database tables for a specific database path."""
+    db = sqlite3.connect(db_path)
+    db.row_factory = sqlite3.Row
     cursor = db.cursor()
 
     if force_reset:
@@ -214,6 +215,12 @@ def init_db(force_reset=False):
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_bookings_user ON bookings (user_id)")
 
     db.commit()
+    db.close()
+
+def init_db(force_reset=False):
+    """Creates the database tables using session-aware db path."""
+    db_path = get_db_path() if hasattr(g, 'db_path') else REGULAR_DB_PATH
+    init_db_for_path(db_path, force_reset)
 
 @app.cli.command('init-db')
 def init_db_command():
@@ -1547,7 +1554,13 @@ if __name__ == '__main__':
 
 # Initialize database and AI models on startup (for production)
 with app.app_context():
-    # Ensure parking.db exists for regular users
+    # Initialize both databases if they don't exist
     if not os.path.exists(REGULAR_DB_PATH):
-        init_db()
+        init_db_for_path(REGULAR_DB_PATH)
+        app.logger.info(f"Initialized regular database: {REGULAR_DB_PATH}")
+    
+    if not os.path.exists(DEMO_DB_PATH):
+        init_db_for_path(DEMO_DB_PATH)
+        app.logger.info(f"Initialized demo database: {DEMO_DB_PATH}")
+    
     load_ai_models()
