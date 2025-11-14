@@ -39,11 +39,23 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Stop App Service (avoid 409 conflicts)
+        run: |
+          az webapp stop \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group smart-parking-rg || true
+
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
           package: .
+          
+      - name: Start App Service
+        run: |
+          az webapp start \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group smart-parking-rg
 
       - name: Configure App Settings
         run: |
