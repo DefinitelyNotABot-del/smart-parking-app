@@ -82,8 +82,15 @@ def load_model(model_name):
             app.logger.warning(f"Model file not found: {model_path}")
             return None
             
-        AI_MODELS[model_name] = joblib.load(model_path)
-        app.logger.info(f"✓ Loaded {model_name} model on-demand")
+        model = joblib.load(model_path)
+        
+        # Force single-threaded prediction to avoid Azure F1 timeout
+        # Multiprocessing (n_jobs=-1) causes 30-second worker timeouts
+        if hasattr(model, 'n_jobs'):
+            model.n_jobs = 1
+        
+        AI_MODELS[model_name] = model
+        app.logger.info(f"✓ Loaded {model_name} model on-demand (single-threaded)")
         return AI_MODELS[model_name]
     except Exception as e:
         app.logger.warning(f"Failed to load {model_name} model: {e}")
