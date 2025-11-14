@@ -668,18 +668,22 @@ def get_customer_bookings():
 @app.route('/api/register', methods=['POST'])
 def register_user():
     data = request.get_json()
-    name, email, password = data.get('name'), data.get('email'), data.get('password')
+    name, email, password, role = data.get('name'), data.get('email'), data.get('password'), data.get('role', 'customer')
 
     if not name or not email or not password:
         return jsonify({"message": "Missing required fields"}), 400
+    
+    # Validate role
+    if role not in ['customer', 'owner']:
+        role = 'customer'
 
     hashed_password = generate_password_hash(password)
-    sql = f"INSERT INTO users (name, email, password_hash) VALUES (?, ?, ?)"
+    sql = f"INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, ?)"
 
     try:
         db = get_db()
         cursor = db.cursor()
-        cursor.execute(sql, (name, email, hashed_password))
+        cursor.execute(sql, (name, email, hashed_password, role))
         db.commit()
         return jsonify({"message": "User registered successfully"})
     except (sqlite3.IntegrityError, Exception):
