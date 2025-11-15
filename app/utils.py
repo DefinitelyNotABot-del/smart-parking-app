@@ -191,45 +191,53 @@ def recommend_spot_for_user(user_id, available_spots):
     return available_spots[preferred_spot_index]
 
 def forecast_peak_hours(lot_id, hours_ahead=24):
-    model = load_model('forecasting')
-    if model is None:
-        current_app.logger.warning("Forecasting model not available.")
-        return None
-
-    # Generate future time steps for forecasting
-    future_times = [datetime.now() + timedelta(hours=i) for i in range(1, hours_ahead + 1)]
+    """
+    NOTE: This forecasting model requires historical lag features and moving averages
+    that cannot be generated in real-time without a time-series database.
+    This function is disabled until proper historical data infrastructure is in place.
+    The model expects features like: occupancy_lag_1h, occupancy_ma_3h, etc.
+    """
+    current_app.logger.warning("Forecasting model temporarily disabled - requires historical time-series data.")
+    return None
     
-    forecast_data = []
-    for ft in future_times:
-        # Features must match what the forecasting model expects
-        # This is a placeholder, adapt based on your model's training data
-        features = {
-            'lot_id': lot_id,
-            'hour': ft.hour,
-            'day_of_week': ft.weekday(),
-            'month': ft.month,
-            'day_of_month': ft.day,
-            'is_weekend': int(ft.weekday() >= 5),
-            'hour_sin': np.sin(2 * np.pi * ft.hour / 24),
-            'hour_cos': np.cos(2 * np.pi * ft.hour / 24),
-            'day_sin': np.sin(2 * np.pi * ft.weekday() / 7),
-            'day_cos': np.cos(2 * np.pi * ft.weekday() / 7),
-        }
-        forecast_data.append(features)
-
-    if not forecast_data:
-        return None
-
-    df_forecast = pd.DataFrame(forecast_data)
-    predictions = model.predict(df_forecast)
-
-    results = []
-    for i, pred in enumerate(predictions):
-        results.append({
-            "time": future_times[i].strftime("%Y-%m-%d %H:%M"),
-            "predicted_occupancy_rate": round(pred, 2)
-        })
-    return results
+    # Original implementation commented out until time-series data infrastructure is ready:
+    # model = load_model('forecasting')
+    # if model is None:
+    #     current_app.logger.warning("Forecasting model not available.")
+    #     return None
+    # 
+    # # Generate future time steps for forecasting
+    # future_times = [datetime.now() + timedelta(hours=i) for i in range(1, hours_ahead + 1)]
+    # 
+    # forecast_data = []
+    # for ft in future_times:
+    #     # Features must match what the forecasting model expects
+    #     features = {
+    #         'lot_id': lot_id,
+    #         'hour': ft.hour,
+    #         'day_of_week': ft.weekday(),
+    #         'month': ft.month,
+    #         'is_weekend': int(ft.weekday() >= 5),
+    #         'hour_sin': np.sin(2 * np.pi * ft.hour / 24),
+    #         'hour_cos': np.cos(2 * np.pi * ft.hour / 24),
+    #         'day_sin': np.sin(2 * np.pi * ft.weekday() / 7),
+    #         'day_cos': np.cos(2 * np.pi * ft.weekday() / 7),
+    #     }
+    #     forecast_data.append(features)
+    # 
+    # if not forecast_data:
+    #     return None
+    # 
+    # df_forecast = pd.DataFrame(forecast_data)
+    # predictions = model.predict(df_forecast)
+    # 
+    # results = []
+    # for i, pred in enumerate(predictions):
+    #     results.append({
+    #         "time": future_times[i].strftime("%Y-%m-%d %H:%M"),
+    #         "predicted_occupancy_rate": round(pred, 2)
+    #     })
+    # return results
 
 # --- Booking Utilities ---
 def create_booking(lot_id, spot_id, user_id, start_dt, end_dt, price_per_hour):

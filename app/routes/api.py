@@ -548,6 +548,7 @@ def end_parking_route():
     return jsonify({"message": "Bookings now end automatically when the reserved time finishes. No manual action needed."}), 410
 
 @bp.route('/bookings')
+@bp.route('/customer/bookings')  # Add alternate route for frontend
 def get_customer_bookings():
     user_id = session.get('user_id')
     if not user_id or session.get('role') != 'customer':
