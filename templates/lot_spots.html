@@ -207,6 +207,7 @@
                             <label for="spotStatus">Status</label>
                             <select class="form-control" id="spotStatus" required>
                                 <option value="available">Available</option>
+                                <option value="reserved">Reserved</option>
                                 <option value="occupied">Occupied</option>
                                 <option value="maintenance">Maintenance</option>
                             </select>
@@ -452,8 +453,10 @@
                             statusBadge = '<span class="badge badge-success">Available</span>';
                         } else if (spot.status === 'occupied') {
                             statusBadge = '<span class="badge badge-danger">Occupied</span>';
+                        } else if (spot.status === 'reserved') {
+                            statusBadge = '<span class="badge badge-warning">Reserved</span>';
                         } else if (spot.status === 'maintenance') {
-                            statusBadge = '<span class="badge badge-warning">Maintenance</span>';
+                            statusBadge = '<span class="badge badge-secondary">Maintenance</span>';
                         }
 
                         const displayType = spot.type === 'motorcycle' ? 'small' : spot.type;

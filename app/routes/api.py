@@ -124,8 +124,35 @@ def lot_detail(lot_id):
         lot = dict(lot)
         cursor.execute("SELECT spot_id, type, status, price_per_hour FROM spots WHERE lot_id = ? ORDER BY spot_id ASC", (lot_id,))
         spots = []
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         for row in cursor.fetchall():
             spot = dict(row)
+            # Check for active or upcoming bookings to determine real-time status
+            cursor.execute("""
+                SELECT COUNT(*) as active_bookings
+                FROM bookings
+                WHERE lot_id = ? AND spot_id = ?
+                AND datetime(end_time) > datetime(?)
+            """, (lot_id, row['spot_id'], now))
+            has_bookings = cursor.fetchone()['active_bookings'] > 0
+            
+            # Override status based on bookings
+            if has_bookings:
+                # Check if currently occupied (booking started) or just reserved (booking is future)
+                cursor.execute("""
+                    SELECT COUNT(*) as currently_occupied
+                    FROM bookings
+                    WHERE lot_id = ? AND spot_id = ?
+                    AND datetime(start_time) <= datetime(?)
+                    AND datetime(end_time) > datetime(?)
+                """, (lot_id, row['spot_id'], now, now))
+                if cursor.fetchone()['currently_occupied'] > 0:
+                    spot['status'] = 'occupied'
+                else:
+                    spot['status'] = 'reserved'
+            else:
+                spot['status'] = 'available'
+            
             if user_role == 'owner':
                 spot['bookings'] = get_future_bookings(lot_id, row['spot_id'])
             spots.append(spot)
