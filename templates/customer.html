@@ -194,25 +194,28 @@
                 bookingsList.innerHTML = ''; // Clear existing list
                 if (bookings && bookings.length > 0) {
                     const listTitle = document.createElement('h5');
-                    listTitle.textContent = 'Your Bookings:';
+                    listTitle.textContent = 'Your Active Bookings:';
                     bookingsList.appendChild(listTitle);
 
                     bookings.forEach(booking => {
                         const bookingEl = document.createElement('div');
                         bookingEl.className = 'booking-item card bg-light mb-2';
+                        const startTime = new Date(booking.start_time).toLocaleString();
+                        const endTime = new Date(booking.end_time).toLocaleString();
                         bookingEl.innerHTML = `
                             <div class="card-body">
                                 <p class="card-text">
                                     <strong>Spot ${booking.spot_id}</strong> (${booking.type})<br>
-                                    at ${booking.location}
+                                    📍 ${booking.location}<br>
+                                    ⏰ ${startTime} - ${endTime}<br>
+                                    💰 ₹${booking.total_cost.toFixed(2)}
                                 </p>
-                                <button class="btn btn-danger btn-sm end-parking-btn" data-spot-id="${booking.spot_id}">End Parking</button>
                             </div>
                         `;
                         bookingsList.appendChild(bookingEl);
                     });
                 } else {
-                    bookingsList.innerHTML = '<h5>Your Bookings:</h5><p>You have no active bookings.</p>';
+                    bookingsList.innerHTML = '<h5>Your Bookings:</h5><p class="text-muted">You have no active bookings. Search for a parking spot to get started!</p>';
                 }
 
             } catch (error) {

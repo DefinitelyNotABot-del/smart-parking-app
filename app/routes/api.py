@@ -280,6 +280,7 @@ def get_lot_analytics(lot_id):
         if not lot:
             current_app.logger.warning(f"Lot {lot_id} not found for owner {user_id}")
             return jsonify({"message": "Lot not found or you don't have permission"}), 404
+        # Current month statistics - all bookings from this month
         cursor.execute("""
             SELECT
                 COUNT(*) as total_bookings,
@@ -526,6 +527,7 @@ def get_customer_bookings():
         return jsonify({"message": "Unauthorized"}), 401
 
     cursor = get_cursor()
+    # Only show ACTIVE and FUTURE bookings (end_time is in the future)
     cursor.execute(
         """
         SELECT b.booking_id, b.lot_id, b.spot_id, s.type, l.location, b.start_time, b.end_time,
@@ -534,7 +536,8 @@ def get_customer_bookings():
         JOIN spots s ON b.lot_id = s.lot_id AND b.spot_id = s.spot_id
         JOIN lots l ON s.lot_id = l.lot_id
         WHERE b.user_id = ?
-        ORDER BY b.start_time DESC
+        AND datetime(b.end_time) > datetime('now')
+        ORDER BY b.start_time ASC
         """,
         (user_id,)
     )
