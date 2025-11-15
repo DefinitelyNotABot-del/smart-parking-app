@@ -78,7 +78,8 @@ def format_datetime(dt):
     return dt.strftime(TIME_FORMAT)
 
 def default_booking_window():
-    start = datetime.utcnow().replace(second=0, microsecond=0)
+    # Use local time consistently, not UTC
+    start = datetime.now().replace(second=0, microsecond=0)
     end = start + timedelta(hours=1)
     return start, end
 
@@ -116,7 +117,7 @@ def get_future_bookings(lot_id, spot_id, limit=20):
     cursor = get_cursor()
     cursor.execute(
         "SELECT b.start_time, b.end_time, b.total_cost FROM bookings b JOIN spots s ON b.spot_id = s.spot_id AND b.lot_id = s.lot_id WHERE s.lot_id = ? AND s.spot_id = ? AND b.end_time >= ? ORDER BY b.start_time ASC LIMIT ?",
-        (lot_id, spot_id, format_datetime(datetime.utcnow()), limit)
+        (lot_id, spot_id, format_datetime(datetime.now()), limit)
     )
     return [dict(row) for row in cursor.fetchall()]
 

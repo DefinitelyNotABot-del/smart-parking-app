@@ -51,7 +51,7 @@ def get_lots():
     cursor = get_cursor()
     cursor.execute("SELECT * FROM lots WHERE owner_id = ?", (user_id,))
     lots = [dict(row) for row in cursor.fetchall()]
-    now_iso = format_datetime(datetime.utcnow())
+    now_iso = format_datetime(datetime.now())
     for lot in lots:
         cursor.execute( "SELECT spot_id, type, price_per_hour FROM spots WHERE lot_id = ?", (lot['lot_id'],) )
         spot_rows = cursor.fetchall()
@@ -288,7 +288,7 @@ def get_lot_bookings(lot_id):
         )
         ORDER BY b.start_time ASC
         """,
-        (format_datetime(datetime.utcnow() - timedelta(days=1)), lot_id)
+        (format_datetime(datetime.now() - timedelta(days=1)), lot_id)
     )
 
     bookings = [dict(row) for row in cursor.fetchall()]
@@ -424,7 +424,7 @@ def validate_booking(spot_id):
         return jsonify({"valid": False}), 401
 
     cursor = get_cursor()
-    now_iso = format_datetime(datetime.utcnow())
+    now_iso = format_datetime(datetime.now())
     cursor.execute(
         """
         SELECT COUNT(*) FROM bookings
