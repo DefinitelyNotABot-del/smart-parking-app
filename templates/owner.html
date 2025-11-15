@@ -86,11 +86,6 @@
         </div>
         <div id="alert-container"></div>
         
-        <!-- AI Insights Banner -->
-        <div id="aiStatusBanner" class="alert alert-success" style="display:none;">
-            <strong>🤖 AI Features Active</strong> - Dynamic pricing and occupancy predictions enabled
-        </div>
-        
         <div class="row" id="lotsContainer">
             <!-- Lots will be loaded here -->
         </div>
@@ -197,16 +192,6 @@
             const userNameDisplay = document.getElementById('userNameDisplay');
             const logoutBtn = document.getElementById('logoutBtn');
             const loadingSpinner = document.getElementById('loading');
-            
-            // Check AI status and show banner if models loaded (non-blocking)
-            fetch('/api/ai/status')
-                .then(res => res.json())
-                .then(aiStatus => {
-                    if (aiStatus.ai_enabled) {
-                        document.getElementById('aiStatusBanner').style.display = 'block';
-                    }
-                })
-                .catch(e => console.log('AI status check failed'));
 
             let lotMap, lotMarker;
 

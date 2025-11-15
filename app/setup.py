@@ -1,14 +1,13 @@
 """
-Complete Database Setup - Initialize DB and Create Demo Accounts
-Run this FIRST before starting the Flask app
+Automatic Database Setup - Runs on app startup
+Checks if databases exist and initializes them if needed
 """
+import os
 import sqlite3
 from werkzeug.security import generate_password_hash
 from datetime import datetime, timedelta
 import random
 
-DEMO_DB_PATH = 'demo.db'
-REGULAR_DB_PATH = 'parking.db'
 
 def init_database(db_path, db_name):
     """Initialize database with all required tables"""
@@ -35,12 +34,6 @@ def init_database(db_path, db_name):
             location TEXT NOT NULL,
             latitude REAL,
             longitude REAL,
-            large_price_per_hour REAL DEFAULT 50.0,
-            motorcycle_price_per_hour REAL DEFAULT 15.0,
-            large_spots INTEGER DEFAULT 0,
-            motorcycle_spots INTEGER DEFAULT 0,
-            total_spots INTEGER DEFAULT 0,
-            occupied_spots INTEGER DEFAULT 0,
             FOREIGN KEY (owner_id) REFERENCES users(user_id)
         )
     """)
@@ -53,6 +46,7 @@ def init_database(db_path, db_name):
             type TEXT NOT NULL,
             status TEXT DEFAULT 'available',
             price_per_hour REAL,
+            display_order INTEGER DEFAULT 0,
             PRIMARY KEY (lot_id, spot_id),
             FOREIGN KEY (lot_id) REFERENCES lots(lot_id)
         )
@@ -78,22 +72,28 @@ def init_database(db_path, db_name):
     conn.close()
     print(f"   ✅ {db_name} tables created")
 
-def setup_demo_accounts():
+
+def setup_demo_accounts(db_path):
     """Create demo accounts with pre-loaded data"""
-    conn = sqlite3.connect(DEMO_DB_PATH)
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
-    print("\n" + "=" * 70)
-    print("🎯 DEMO ACCOUNT SETUP")
-    print("=" * 70)
+    print("🎯 Setting up demo accounts...")
     
     # Demo credentials
     DEMO_OWNER_EMAIL = 'demo.owner@smartparking.com'
     DEMO_CUSTOMER_EMAIL = 'demo.customer@smartparking.com'
     DEMO_PASSWORD = 'demo123'
     
+    # Check if demo accounts already exist
+    cursor.execute("SELECT COUNT(*) FROM users WHERE email IN (?, ?)", 
+                  (DEMO_OWNER_EMAIL, DEMO_CUSTOMER_EMAIL))
+    if cursor.fetchone()[0] >= 2:
+        conn.close()
+        print("   ℹ️  Demo accounts already exist, skipping setup")
+        return
+    
     # Create demo owner
-    print("\n1️⃣ Creating demo owner account...")
     try:
         hashed_pwd = generate_password_hash(DEMO_PASSWORD)
         cursor.execute(
@@ -101,14 +101,11 @@ def setup_demo_accounts():
             ('Demo Owner Account', DEMO_OWNER_EMAIL, hashed_pwd, 'owner')
         )
         demo_owner_id = cursor.lastrowid
-        print(f"   ✅ Created: {DEMO_OWNER_EMAIL}")
     except sqlite3.IntegrityError:
         cursor.execute("SELECT user_id FROM users WHERE email = ?", (DEMO_OWNER_EMAIL,))
         demo_owner_id = cursor.fetchone()[0]
-        print(f"   ℹ️  Already exists: {DEMO_OWNER_EMAIL}")
     
     # Create demo customer
-    print("\n2️⃣ Creating demo customer account...")
     try:
         hashed_pwd = generate_password_hash(DEMO_PASSWORD)
         cursor.execute(
@@ -116,16 +113,13 @@ def setup_demo_accounts():
             ('Demo Customer Account', DEMO_CUSTOMER_EMAIL, hashed_pwd, 'customer')
         )
         demo_customer_id = cursor.lastrowid
-        print(f"   ✅ Created: {DEMO_CUSTOMER_EMAIL}")
     except sqlite3.IntegrityError:
         cursor.execute("SELECT user_id FROM users WHERE email = ?", (DEMO_CUSTOMER_EMAIL,))
         demo_customer_id = cursor.fetchone()[0]
-        print(f"   ℹ️  Already exists: {DEMO_CUSTOMER_EMAIL}")
     
     conn.commit()
     
     # Create parking lots
-    print("\n3️⃣ Creating parking lots...")
     demo_lots = [
         ('Downtown Business District', 28.6139, 77.2090, 100, 30, 60.0, 25.0),
         ('Airport Terminal Parking', 28.5562, 77.1000, 150, 50, 80.0, 30.0),
@@ -141,24 +135,18 @@ def setup_demo_accounts():
         
         if existing:
             lot_id = existing[0]
-            print(f"   ℹ️  Already exists: {location}")
         else:
             cursor.execute("""
-                INSERT INTO lots (owner_id, location, latitude, longitude,
-                                large_price_per_hour, motorcycle_price_per_hour,
-                                large_spots, motorcycle_spots, total_spots, occupied_spots)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (demo_owner_id, location, lat, lng, large_price, small_price,
-                  large, small, large + small, 0))
+                INSERT INTO lots (owner_id, location, latitude, longitude)
+                VALUES (?, ?, ?, ?)
+            """, (demo_owner_id, location, lat, lng))
             lot_id = cursor.lastrowid
-            print(f"   ✅ Created: {location}")
         
         lot_ids.append((lot_id, large, small, large_price, small_price))
     
     conn.commit()
     
     # Create spots
-    print("\n4️⃣ Creating parking spots...")
     total_spots = 0
     spot_data = []
     
@@ -166,26 +154,24 @@ def setup_demo_accounts():
         # Large spots
         for spot_num in range(1, large_count + 1):
             cursor.execute("""
-                INSERT OR IGNORE INTO spots (lot_id, spot_id, type, status, price_per_hour)
-                VALUES (?, ?, ?, ?, ?)
-            """, (lot_id, spot_num, 'large', 'available', large_price))
+                INSERT OR IGNORE INTO spots (lot_id, spot_id, type, status, price_per_hour, display_order)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (lot_id, spot_num, 'large', 'available', large_price, spot_num))
             spot_data.append((lot_id, spot_num, 'large'))
             total_spots += 1
         
         # Small spots
         for spot_num in range(large_count + 1, large_count + small_count + 1):
             cursor.execute("""
-                INSERT OR IGNORE INTO spots (lot_id, spot_id, type, status, price_per_hour)
-                VALUES (?, ?, ?, ?, ?)
-            """, (lot_id, spot_num, 'small', 'available', small_price))
+                INSERT OR IGNORE INTO spots (lot_id, spot_id, type, status, price_per_hour, display_order)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (lot_id, spot_num, 'small', 'available', small_price, spot_num))
             spot_data.append((lot_id, spot_num, 'small'))
             total_spots += 1
     
     conn.commit()
-    print(f"   ✅ Created {total_spots} spots")
     
     # Create additional customers
-    print("\n5️⃣ Creating additional demo customers...")
     demo_customers = [
         ('Alice Johnson', 'alice.demo@example.com'),
         ('Bob Smith', 'bob.demo@example.com'),
@@ -208,10 +194,8 @@ def setup_demo_accounts():
                 customer_ids.append(result[0])
     
     conn.commit()
-    print(f"   ✅ Total {len(customer_ids)} customers")
     
     # Generate bookings
-    print("\n6️⃣ Generating booking history...")
     bookings_created = 0
     now = datetime.now()
     
@@ -256,49 +240,58 @@ def setup_demo_accounts():
     conn.commit()
     conn.close()
     
-    print(f"   ✅ Created {bookings_created} bookings")
-    
-    print("\n" + "=" * 70)
-    print("✅ SETUP COMPLETE!")
-    print("=" * 70)
-    print("\n📋 DEMO CREDENTIALS:")
-    print(f"\n   🏢 Owner: {DEMO_OWNER_EMAIL}")
-    print(f"   👤 Customer: {DEMO_CUSTOMER_EMAIL}")
-    print(f"   🔑 Password: {DEMO_PASSWORD}")
-    print(f"\n   📊 Pre-loaded: 4 lots, {total_spots} spots, {bookings_created} bookings")
-    print("\n💡 OTHER USERS:")
-    print("   - Register with any other email to create your own data")
-    print("   - Your data will be completely separate from demo accounts")
-    print("\n🚀 Now run: python app.py")
-    print("=" * 70)
+    print(f"   ✅ Demo data created: {total_spots} spots, {bookings_created} bookings")
 
-if __name__ == "__main__":
-    print("\n" + "=" * 70)
-    print("🚀 SMART PARKING - DATABASE SETUP")
-    print("=" * 70)
+
+def ensure_databases_ready(app):
+    """
+    Check if databases exist and are initialized.
+    If not, create them automatically.
+    Called during app initialization.
+    """
+    demo_db_path = app.config['DEMO_DATABASE']
+    regular_db_path = app.config['DATABASE']
     
-    # Initialize demo database with demo accounts
-    print("\n📊 DEMO DATABASE (demo.db)")
-    print("   - Used by: demo.owner@smartparking.com, demo.customer@smartparking.com")
-    print("   - Contains: Pre-loaded lots, spots, and bookings")
-    print("   - Safe from wipes: Separate from regular users")
-    init_database(DEMO_DB_PATH, "demo.db")
-    setup_demo_accounts()
+    # Check if databases exist
+    demo_exists = os.path.exists(demo_db_path)
+    regular_exists = os.path.exists(regular_db_path)
     
-    # Initialize regular user database (empty)
-    print("\n" + "=" * 70)
-    print("\n📊 REGULAR USER DATABASE (parking.db)")
-    print("   - Used by: All other registered users")
-    print("   - Contains: User-created data only")
-    print("   - Can be reset: Without affecting demos")
-    init_database(REGULAR_DB_PATH, "parking.db")
-    print("   ✅ parking.db initialized (empty, ready for users)")
+    if demo_exists and regular_exists:
+        # Both databases exist, just verify they have tables
+        try:
+            conn = sqlite3.connect(demo_db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+            has_tables = cursor.fetchone() is not None
+            conn.close()
+            
+            if has_tables:
+                print("✅ Databases already initialized")
+                return
+        except:
+            pass
     
-    print("\n" + "=" * 70)
-    print("✅ SETUP COMPLETE!")
-    print("=" * 70)
-    print("\n🗄️  TWO SEPARATE DATABASES:")
-    print("   demo.db      → Demo accounts (pre-loaded)")
-    print("   parking.db   → Regular users (empty)")
-    print("\n🚀 Now run: python app.py")
-    print("=" * 70)
+    # Need to initialize databases
+    print("\n" + "="*70)
+    print("🚀 FIRST TIME SETUP - Initializing databases...")
+    print("="*70)
+    
+    # Initialize demo database
+    if not demo_exists or not has_tables:
+        print("\n📊 Setting up DEMO DATABASE (demo.db)")
+        init_database(demo_db_path, "demo.db")
+        setup_demo_accounts(demo_db_path)
+        print(f"   ✅ Demo accounts ready:")
+        print(f"      Owner: demo.owner@smartparking.com")
+        print(f"      Customer: demo.customer@smartparking.com")
+        print(f"      Password: demo123")
+    
+    # Initialize regular database
+    if not regular_exists:
+        print("\n📊 Setting up REGULAR USER DATABASE (parking.db)")
+        init_database(regular_db_path, "parking.db")
+        print("   ✅ Regular database ready for new users")
+    
+    print("\n" + "="*70)
+    print("✅ SETUP COMPLETE - App ready to use!")
+    print("="*70 + "\n")
