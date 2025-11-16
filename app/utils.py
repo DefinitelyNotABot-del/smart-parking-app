@@ -2,7 +2,7 @@ import os
 import joblib
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from flask import current_app, session
 
 # Note: These functions now rely on the application context for db access and logging.
@@ -19,10 +19,17 @@ DEFAULT_PRICING = {
 
 TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
+# IST timezone offset (UTC+5:30)
+IST = timezone(timedelta(hours=5, minutes=30))
+
 DEMO_EMAILS = [
     'demo.owner@smartparking.com',
     'demo.customer@smartparking.com'
 ]
+
+def get_ist_now():
+    """Get current time in IST timezone"""
+    return datetime.now(IST)
 
 def is_demo_account(email):
     """Check if email is a demo account with pre-generated data"""
@@ -75,11 +82,15 @@ def parse_datetime(value):
         except ValueError: return None
 
 def format_datetime(dt):
+    """Format datetime to ISO string (timezone-aware if provided)"""
+    if dt.tzinfo is None:
+        # Assume IST if no timezone
+        dt = dt.replace(tzinfo=IST)
     return dt.strftime(TIME_FORMAT)
 
 def default_booking_window():
-    # Use local time consistently, not UTC
-    start = datetime.now().replace(second=0, microsecond=0)
+    # Use IST time consistently
+    start = get_ist_now().replace(second=0, microsecond=0)
     end = start + timedelta(hours=1)
     return start, end
 

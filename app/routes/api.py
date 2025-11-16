@@ -9,7 +9,8 @@ from ..utils import (
     predict_occupancy, optimize_price, recommend_spot_for_user, forecast_peak_hours,
     format_datetime, coerce_price, get_spot_default_price, is_demo_account,
     create_booking, spot_is_available, get_future_bookings, load_model, AI_MODELS,
-    parse_datetime, default_booking_window, calculate_total_cost, get_duration_hours
+    parse_datetime, default_booking_window, calculate_total_cost, get_duration_hours,
+    get_ist_now
 )
 from nlp_parser import parser as nlp_parser 
 from .. import socketio
@@ -51,7 +52,7 @@ def get_lots():
     cursor = get_cursor()
     cursor.execute("SELECT * FROM lots WHERE owner_id = ?", (user_id,))
     lots = [dict(row) for row in cursor.fetchall()]
-    now_iso = format_datetime(datetime.now())
+    now_iso = format_datetime(get_ist_now())
     for lot in lots:
         cursor.execute( "SELECT spot_id, type, price_per_hour FROM spots WHERE lot_id = ?", (lot['lot_id'],) )
         spot_rows = cursor.fetchall()
@@ -124,7 +125,7 @@ def lot_detail(lot_id):
         lot = dict(lot)
         cursor.execute("SELECT spot_id, type, status, price_per_hour FROM spots WHERE lot_id = ? ORDER BY spot_id ASC", (lot_id,))
         spots = []
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = get_ist_now().strftime("%Y-%m-%d %H:%M:%S")
         for row in cursor.fetchall():
             spot = dict(row)
             # Check for active or upcoming bookings to determine real-time status
@@ -138,7 +139,7 @@ def lot_detail(lot_id):
             
             # Override status based on bookings
             if has_bookings:
-                # Check if currently occupied (booking started) or just reserved (booking is future)
+                # Check if currently occupied (active booking right now)
                 cursor.execute("""
                     SELECT COUNT(*) as currently_occupied
                     FROM bookings
@@ -149,7 +150,8 @@ def lot_detail(lot_id):
                 if cursor.fetchone()['currently_occupied'] > 0:
                     spot['status'] = 'occupied'
                 else:
-                    spot['status'] = 'reserved'
+                    # Spot has future bookings but is available right now
+                    spot['status'] = 'available'
             else:
                 spot['status'] = 'available'
             
@@ -288,7 +290,7 @@ def get_lot_bookings(lot_id):
         )
         ORDER BY b.start_time ASC
         """,
-        (format_datetime(datetime.now() - timedelta(days=1)), lot_id)
+        (format_datetime(get_ist_now() - timedelta(days=1)), lot_id)
     )
 
     bookings = [dict(row) for row in cursor.fetchall()]
@@ -375,7 +377,7 @@ def get_lot_analytics(lot_id):
         predictions = []
         pricing_recommendations = []
         if has_booking_history:
-            now = datetime.now()
+            now = get_ist_now()
             for hour_offset in range(0, 24, 3):
                 target_time = now + timedelta(hours=hour_offset)
                 pred = predict_occupancy(lot_id, target_time)
@@ -424,7 +426,7 @@ def validate_booking(spot_id):
         return jsonify({"valid": False}), 401
 
     cursor = get_cursor()
-    now_iso = format_datetime(datetime.now())
+    now_iso = format_datetime(get_ist_now())
     cursor.execute(
         """
         SELECT COUNT(*) FROM bookings
@@ -466,7 +468,7 @@ def api_predict_occupancy(lot_id):
             "success": True,
             "lot_id": lot_id,
             "prediction": prediction,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": get_ist_now().isoformat()
         })
     except Exception as e:
         current_app.logger.error(f"Occupancy prediction error: {e}", exc_info=True)
@@ -523,7 +525,7 @@ def api_forecast_peak(lot_id):
             "success": True,
             "lot_id": lot_id,
             "forecast": forecast,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": get_ist_now().isoformat()
         })
     except Exception as e:
         current_app.logger.error(f"Forecast error: {e}", exc_info=True)
