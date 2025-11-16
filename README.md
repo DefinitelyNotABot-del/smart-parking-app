@@ -1,237 +1,324 @@
-# 🅿️ Smart Parking App
+# 🅿️ Smart Parking Management System
 
-Real-time parking management with **intelligent local NLP search**. Deployed on Azure with zero-cost Free tier!
-
-## ✨ Key Features
-
-- 🧠 **Smart Local NLP Search** - Understands natural language without external APIs
-- 🎯 **No Hallucinations** - Only returns real parking spots from your database
-- ⚡ **Instant Results** - No API timeouts, works offline
-- 🔄 **Real-time Updates** - WebSocket notifications for spot availability
-- 🗺️ **Interactive Map** - Leaflet.js with OpenStreetMap integration
-- 👥 **Dual Roles** - Customer (find parking) & Owner (manage lots)
-- � **Secure Authentication** - Password hashing with Werkzeug
-- 🌐 **Production Ready** - Deployed on Azure App Service
+AI-powered parking management platform with real-time booking, analytics, and dynamic pricing recommendations.
 
 ## 🚀 Live Demo
 
-**Deployed at:** https://smart-parking-app.azurewebsites.net
+**URL:** https://smart-parking-app.azurewebsites.net
 
-**Cost: $0/month** - Runs on Azure F1 Free tier (no consumption of student credits!)
+## ✨ Features
 
-### Prerequisites
-- Azure student account ($100 credit)
-- GitHub account
-- Git Bash (for Windows)
-
-### Setup (One-Time - 5 minutes)
-
-1. **Run Azure Setup Script:**
-```bash
-# In Git Bash or Azure Cloud Shell
-chmod +x setup-azure.sh
-./setup-azure.sh
-```
-
-2. **Add GitHub Secrets:**
-Go to: `Settings` → `Secrets and variables` → `Actions` → `New repository secret`
-
-Add these 5 secrets from the script output:
-- `AZURE_CLIENT_ID`
-- `AZURE_TENANT_ID`
-- `AZURE_SUBSCRIPTION_ID`
-- `FLASK_SECRET_KEY` (generate: `python -c "import secrets; print(secrets.token_hex(32))"`)
-
-3. **Deploy:**
-```bash
-git add .
-git commit -m "Configure Azure deployment"
-git push origin main
-```
-
-Your app will be live at: `https://smart-parking-app.azurewebsites.net`
-
-## 🔒 Security Features
-
-- **Federated Credentials (OIDC)** - No service principal keys stored anywhere!
-- **Managed Identity** - Azure resources authenticate automatically
-- **GitHub Secrets** - All sensitive data encrypted
-- **No manual key rotation** - Automatic credential management
-- **Password Hashing** - Werkzeug secure password storage
-
-## 🧠 Smart NLP Search Engine
-
-### How It Works
-The app features a **custom-built local NLP parser** that understands natural language queries without external APIs:
-
-**Example Queries:**
-- "I need car parking near AMC Engineering College" ✅
-- "bike parking vega city" ✅
-
-**Features:**
-- ✅ **Exact Word Matching** - Finds locations with matching keywords
-- ✅ **Fuzzy Matching** - Handles typos (60% similarity threshold)
-- ✅ **Vehicle Type Detection** - Automatically identifies car/bike
-- ✅ **No Hallucinations** - Only returns real spots from database
-- ✅ **Instant Response** - No API timeouts or rate limits
-- ✅ **Works Offline** - Pure Python regex and fuzzy logic
-
-### Why Local NLP?
-We initially used **Google Gemini API**, but encountered issues:
-- ❌ Free tier extremely slow (2+ minute response times)
-- ❌ Worker timeouts killing requests
-- ❌ Rate limits and API key management
-- ❌ Dependency on external service
-
-**Solution:** Built lightweight NLP using Python's `difflib` and regex patterns
-- ⚡ Instant results (<100ms)
-- 💰 Zero API costs
-- 🔒 Complete data privacy
-- 📈 Scales infinitely
+- 🎯 **Smart Search** - NLP-powered natural language parking search
+- 🗺️ **Interactive Maps** - Leaflet.js with OpenStreetMap integration
+- 📊 **AI Analytics** - ML-based occupancy forecasting and pricing optimization
+- 🔄 **Real-time Updates** - WebSocket notifications for spot availability
+- 👥 **Dual Roles** - Customer (find & book) and Owner (manage lots)
+- 🔒 **Secure Auth** - Password hashing and session management
 
 ## 🛠️ Technology Stack
 
-**Backend:**
-- Flask 3.1.2 (Web framework)
-- Flask-SocketIO 5.5.1 (Real-time WebSocket communication)
-- SQLite3 (Database - zero configuration)
-- Gunicorn + Eventlet (Production server)
-- Custom NLP Parser (Local natural language processing)
+- **Backend:** Flask 3.1.2, Flask-SocketIO 5.5.1, SQLite3
+- **Frontend:** HTML5/CSS3/JavaScript, Leaflet.js, Chart.js
+- **ML/AI:** Scikit-learn 1.6.1, NumPy, Pandas
+- **Server:** Gunicorn + Eventlet (production), Flask dev server (local)
+- **Cloud:** Azure App Service (F1 Free Tier)
 
-**Frontend:**
-- HTML5/CSS3/JavaScript
-- Leaflet.js (Interactive maps)
-- Chart.js (Analytics visualization)
-- OpenStreetMap (Free map tiles)
+## 📋 Prerequisites
 
-**Cloud Infrastructure:**
-- Azure App Service F1 (Free tier - $0/month)
-- GitHub Actions (CI/CD with OIDC authentication)
-- Azure Managed Identity (Secure resource access)
+### Required Software
 
-**Security:**
-- Werkzeug (Password hashing)
-- Environment variables for secrets
-- Federated Credentials (No stored keys)
+1. **Python 3.12+**
+   - Download: https://www.python.org/downloads/
+   - Verify: `python --version`
 
-## 📊 What We Accomplished (Latest Session)
+2. **Git**
+   - Download: https://git-scm.com/downloads
+   - Verify: `git --version`
 
-### Problem Solved
-- **Initial Issue:** Gemini API free tier was timing out (2+ minutes per search)
-- **Root Cause:** Azure F1 worker timeout at 120 seconds, Gemini couldn't respond in time
-- **Impact:** Users saw "Application Error" - complete feature failure
+3. **Docker** (Optional - for containerized deployment)
+   - Download: https://www.docker.com/products/docker-desktop/
+   - Verify: `docker --version`
 
-### Solution Implemented
-1. **Built Custom Local NLP Engine**
-   - Regex-based vehicle type extraction
-   - Word-by-word location matching
-   - Fuzzy similarity fallback (60% threshold)
-   - Smart scoring system (exact matches get 15 points, fuzzy gets 10)
+4. **Azure CLI** (Optional - for Azure deployment)
+   - Download: https://docs.microsoft.com/en-us/cli/azure/install-azure-cli
+   - Verify: `az --version`
 
-2. **Deployment Fixes**
-   - Added `ENABLE_ORYX_BUILD=true` for dependency installation
-   - Configured `eventlet` worker for async support
-   - Set proper Gunicorn timeouts (30s)
-   - Added health check endpoint
+## 🚀 Local Setup
 
-3. **Security Improvements**
-   - Rotated leaked Gemini API keys (3 times)
-   - Verified no keys in git history
-   - Confirmed GitHub Secrets encryption
-   - Added API key length validation
-
-4. **Testing & Refinement**
-   - Fixed "too strict" matching (rejected valid locations)
-   - Fixed "too loose" matching (matched random locations)
-   - Balanced to require exact word matches with fuzzy fallback
-   - Added debug logging for troubleshooting
-
-### Results
-- ✅ Search works instantly (<100ms response time)
-- ✅ Zero dependency on external APIs
-- ✅ No more timeouts or worker crashes
-- ✅ Accurate location matching without hallucinations
-- ✅ Production-ready deployment on Azure Free tier
-
-## Project Structure
-
-- `app.py`: The main Flask server.
-- `data/parking.db`: The SQLite database.
-- `templates/`: Contains all HTML files.
-    - `index.html`: Main splash page (login/signup).
-    - `customer.html`: Frontend for customers to find and book spots.
-    - `owner.html`: Frontend for owners to add lots/spots and see reports.
-    - `lot_spots.html`: Frontend for owners to manage spots within a specific lot.
-    - `role.html`: Page for users to select their role (Customer or Owner).
-- `requirements.txt`: Lists all Python dependencies.
-
-## Setup Instructions
-
-Follow these steps to get the project running on your local machine:
-
-### 1. Clone the Repository
+### 1. Clone Repository
 
 ```bash
-git clone <repository_url>
+git clone https://github.com/DefinitelyNotABot-del/smart-parking-app.git
 cd smart-parking-app
 ```
 
-### 2. Create a Virtual Environment
+### 2. Create Virtual Environment
 
-It's recommended to use a virtual environment to manage project dependencies.
-
+**Windows:**
 ```bash
 python -m venv .venv
+.venv\Scripts\activate
 ```
 
-### 3. Activate the Virtual Environment
+**macOS/Linux:**
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
 
-- **On Windows:**
-    ```bash
-    .venv\Scripts\activate
-    ```
-- **On macOS/Linux:**
-    ```bash
-    source .venv/bin/activate
-    ```
-
-### 4. Install Dependencies
-
-Install all required Python packages using `pip`:
+### 3. Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
+### 4. Environment Configuration (Optional)
 
-### 6. Run the Application
+Create a `.env` file in the project root:
 
-Once the dependencies are installed and environment variables are set, you can run the Flask application:
-
-```bash
-flask run
+```env
+FLASK_SECRET_KEY=your-secret-key-here
+FLASK_ENV=development
 ```
 
-The application should now be running on `http://127.0.0.1:5000/`.
+Generate a secure secret key:
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
+```
 
-## Usage
+### 5. Run Application
 
-- Open your web browser and navigate to `http://127.0.0.1:5000/`.
-- Select your role (Customer or Owner).
-- Register or log in to access the respective dashboards.
+**Method 1: Flask Development Server**
+```bash
+python run.py
+```
 
-## Features
+**Method 2: Gunicorn (Production-like)**
+```bash
+gunicorn --worker-class eventlet -w 1 --bind 0.0.0.0:5000 "app:create_app()"
+```
 
-### Customer Dashboard
+Access the app at: **http://localhost:5000**
 
-- **AI-Powered Smart Search:** Find parking spots using natural language queries.
-- **Interactive Map:** Visualize parking lot locations.
-- **Real-time Booking:** Book available parking spots.
-- **End Parking:** Mark a booked spot as available.
+## 🐳 Docker Setup
 
-### Owner Dashboard
+### Build Docker Image
 
-- **CRUD for Parking Lots:** Add, edit, and delete parking lots.
-- **Interactive Map for Lot Location:** Precisely select lot coordinates.
-- **Spot Management:** Add, edit, and delete individual spots within a lot.
-- **Occupancy Overview:** Monitor total and occupied spots for each lot.
+```bash
+docker build -t smart-parking-app .
+```
+
+### Run Container
+
+```bash
+docker run -d -p 5000:5000 --name parking-app smart-parking-app
+```
+
+### Stop Container
+
+```bash
+docker stop parking-app
+docker rm parking-app
+```
+
+## ☁️ Azure Deployment
+
+### Prerequisites
+
+- Azure account with active subscription
+- Azure CLI installed
+- GitHub repository connected
+
+### Automated Deployment (Recommended)
+
+1. **Configure Azure Resources**
+
+```bash
+chmod +x setup-azure.sh
+./setup-azure.sh
+```
+
+2. **Add GitHub Secrets**
+
+Go to: `Settings` → `Secrets and variables` → `Actions`
+
+Add these secrets (values from setup script output):
+- `AZURE_CLIENT_ID`
+- `AZURE_TENANT_ID`
+- `AZURE_SUBSCRIPTION_ID`
+- `FLASK_SECRET_KEY`
+
+3. **Deploy via GitHub Actions**
+
+```bash
+git add .
+git commit -m "Deploy to Azure"
+git push origin main
+```
+
+Your app will be deployed automatically via CI/CD pipeline.
+
+### Manual Azure Deployment
+
+```bash
+# Login to Azure
+az login
+
+# Create resource group
+az group create --name smart-parking-rg --location eastus
+
+# Create App Service plan (F1 Free tier)
+az appservice plan create --name smart-parking-plan --resource-group smart-parking-rg --sku F1 --is-linux
+
+# Create web app
+az webapp create --resource-group smart-parking-rg --plan smart-parking-plan --name smart-parking-app --runtime "PYTHON:3.12"
+
+# Configure startup command
+az webapp config set --resource-group smart-parking-rg --name smart-parking-app --startup-file "startup.sh"
+
+# Deploy code
+az webapp up --name smart-parking-app --resource-group smart-parking-rg
+```
+
+## 📁 Project Structure
+
+```
+smart-parking-app/
+├── app/
+│   ├── __init__.py          # App factory (create_app)
+│   ├── db.py                # Database connections
+│   ├── setup.py             # Auto-initialization
+│   ├── utils.py             # Utility functions
+│   ├── routes/
+│   │   ├── auth.py          # Authentication routes
+│   │   ├── customer.py      # Customer views
+│   │   ├── owner.py         # Owner views
+│   │   └── api.py           # REST API endpoints
+│   └── services/
+│       └── db_setup.py      # Schema constants
+├── templates/               # HTML templates
+├── static/                  # CSS/JS/images
+├── data/
+│   └── ml_training/         # ML models & training data
+├── instance/                # Database files (auto-created)
+├── run.py                   # Application entry point
+├── requirements.txt         # Python dependencies
+├── Dockerfile               # Docker configuration
+├── startup.sh               # Azure startup script
+├── .github/workflows/       # CI/CD pipeline
+└── README.md                # This file
+```
+
+## 🔧 Configuration
+
+### Database
+
+The app uses **dual SQLite architecture**:
+- `instance/parking.db` - Main production database
+- `instance/demo.db` - Demo data with pre-populated lots
+
+Databases are created automatically on first run.
+
+### ML Models
+
+Pre-trained models located in `data/ml_training/`:
+- `occupancy_model.pkl` - Predicts parking occupancy
+- `pricing_model.pkl` - Dynamic pricing recommendations
+- `forecasting_model.pkl` - Peak hours prediction
+- `preference_model.pkl` - User spot recommendations
+
+Models are loaded on-demand to minimize memory usage.
+
+## 🧪 Testing
+
+```bash
+# Run application tests
+python -m pytest tests/
+
+# Check for code issues
+python pre_deployment_check.py
+```
+
+## 📦 Requirements
+
+Key dependencies (see `requirements.txt` for full list):
+
+```
+Flask==3.1.2
+Flask-SocketIO==5.5.1
+gunicorn
+eventlet
+scikit-learn==1.6.1
+pandas==2.3.3
+numpy==2.3.4
+joblib==1.4.2
+python-dotenv==1.2.1
+Werkzeug==3.1.3
+```
+
+### Installing Specific Versions
+
+```bash
+# Core Flask
+pip install Flask==3.1.2
+
+# Real-time features
+pip install Flask-SocketIO==5.5.1 python-socketio==5.14.3 eventlet
+
+# ML/AI
+pip install scikit-learn==1.6.1 pandas==2.3.3 numpy==2.3.4
+
+# Production server
+pip install gunicorn
+```
+
+## 🆘 Troubleshooting
+
+### Port Already in Use
+
+```bash
+# Windows
+netstat -ano | findstr :5000
+taskkill /PID <PID> /F
+
+# Linux/macOS
+lsof -ti:5000 | xargs kill -9
+```
+
+### Database Locked Error
+
+```bash
+# Stop all running instances
+# Delete instance/*.db-shm and instance/*.db-wal files
+# Restart application
+```
+
+### Module Not Found
+
+```bash
+# Reinstall dependencies
+pip install --upgrade -r requirements.txt
+```
+
+### Azure Deployment Fails
+
+- Check `startup.txt` points to `startup.sh`
+- Verify Python runtime: `az webapp config show --name <app-name> --resource-group <rg-name>`
+- View logs: `az webapp log tail --name <app-name> --resource-group <rg-name>`
+
+## 📝 License
+
+This project is for educational purposes.
+
+## 👥 Contributing
+
+1. Fork the repository
+2. Create feature branch (`git checkout -b feature/YourFeature`)
+3. Commit changes (`git commit -m 'Add YourFeature'`)
+4. Push to branch (`git push origin feature/YourFeature`)
+5. Open Pull Request
+
+## 📧 Contact
+
+- **GitHub:** [@DefinitelyNotABot-del](https://github.com/DefinitelyNotABot-del)
+- **Live App:** https://smart-parking-app.azurewebsites.net
