@@ -1,58 +1,61 @@
 # 🅿️ Smart Parking Management System
 
-AI-powered parking management platform with real-time booking, analytics, and dynamic pricing recommendations.
+**What it does:** Real-time parking spot booking with AI-powered search, interactive maps, and owner dashboards. Customers find and book parking, owners manage lots and view analytics.
 
-## 🚀 Live Demo
+---
 
-**URL:** https://smart-parking-app.azurewebsites.net
-
-## ✨ Features
-
-- 🎯 **Smart Search** - NLP-powered natural language parking search
-- 🗺️ **Interactive Maps** - Leaflet.js with OpenStreetMap integration
-- 📊 **AI Analytics** - ML-based occupancy forecasting and pricing optimization
-- 🔄 **Real-time Updates** - WebSocket notifications for spot availability
-- 👥 **Dual Roles** - Customer (find & book) and Owner (manage lots)
-- 🔒 **Secure Auth** - Password hashing and session management
-
-## 🛠️ Technology Stack
-
-- **Backend:** Flask 3.1.2, Flask-SocketIO 5.5.1, SQLite3
-- **Frontend:** HTML5/CSS3/JavaScript, Leaflet.js, Chart.js
-- **ML/AI:** Scikit-learn 1.6.1, NumPy, Pandas
-- **Server:** Gunicorn + Eventlet (production), Flask dev server (local)
-- **Cloud:** Azure App Service (F1 Free Tier)
-
-## 📋 Prerequisites
-
-### Required Software
-
-1. **Python 3.12+**
-   - Download: https://www.python.org/downloads/
-   - Verify: `python --version`
-
-2. **Git**
-   - Download: https://git-scm.com/downloads
-   - Verify: `git --version`
-
-3. **Docker** (Optional - for containerized deployment)
-   - Download: https://www.docker.com/products/docker-desktop/
-   - Verify: `docker --version`
-
-4. **Azure CLI** (Optional - for Azure deployment)
-   - Download: https://docs.microsoft.com/en-us/cli/azure/install-azure-cli
-   - Verify: `az --version`
-
-## 🚀 Local Setup
-
-### 1. Clone Repository
+## ⚡ Super Quick Setup (Copy-Paste)
 
 ```bash
 git clone https://github.com/DefinitelyNotABot-del/smart-parking-app.git
 cd smart-parking-app
+python -m venv .venv
+# Windows: .venv\Scripts\activate | Linux/Mac: source .venv/bin/activate
+pip install -r requirements.txt
+python run.py
+```
+**Open:** http://localhost:5000
+
+---
+
+## 🚀 Detailed Setup Guide
+
+### Prerequisites (Install These First)
+
+1. **Python 3.12+** - [Download here](https://www.python.org/downloads/)
+   - ✅ **SQLite3 included** (no separate install needed)
+   - During install: ✓ Check "Add Python to PATH"
+   - Verify: `python --version`
+
+2. **VS Code** - [Download here](https://code.visualstudio.com/)
+   - Install "Python" extension by Microsoft
+
+3. **Git** - [Download here](https://git-scm.com/downloads/)
+   - Verify: `git --version`
+
+4. **Docker Desktop** (Optional) - [Download here](https://www.docker.com/products/docker-desktop/)
+   - Only needed for containerized deployment
+   - Verify: `docker --version`
+
+## 🚀 Setup in VS Code (Recommended)
+
+### Step 1: Clone & Open Project
+
+```bash
+git clone https://github.com/DefinitelyNotABot-del/smart-parking-app.git
+cd smart-parking-app
+code .
 ```
 
-### 2. Create Virtual Environment
+### Step 2: Select Python Interpreter in VS Code
+
+1. Press `Ctrl+Shift+P` (Windows/Linux) or `Cmd+Shift+P` (Mac)
+2. Type: `Python: Select Interpreter`
+3. Choose your Python 3.12+ installation
+
+### Step 3: Create Virtual Environment
+
+**In VS Code Terminal** (`` Ctrl+` ``):
 
 **Windows:**
 ```bash
@@ -66,60 +69,100 @@ python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-### 3. Install Dependencies
+You should see `(.venv)` in your terminal prompt.
+
+### Step 4: Install All Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Environment Configuration (Optional)
+This installs:
+- Flask & Flask-SocketIO (web framework & real-time features)
+- Scikit-learn, NumPy, Pandas (ML/AI models)
+- Gunicorn, Eventlet (production server)
+- All other dependencies automatically
 
-Create a `.env` file in the project root:
+**Note:** SQLite3 is already included with Python - no separate installation needed!
 
-```env
-FLASK_SECRET_KEY=your-secret-key-here
-FLASK_ENV=development
-```
+### Step 5: Run the Application
 
-Generate a secure secret key:
-```bash
-python -c "import secrets; print(secrets.token_hex(32))"
-```
-
-### 5. Run Application
-
-**Method 1: Flask Development Server**
 ```bash
 python run.py
 ```
 
-**Method 2: Gunicorn (Production-like)**
-```bash
-gunicorn --worker-class eventlet -w 1 --bind 0.0.0.0:5000 "app:create_app()"
+**Expected output:**
+```
+✓ Databases initialized
+ * Running on http://127.0.0.1:5000
 ```
 
-Access the app at: **http://localhost:5000**
+Open in browser: **http://localhost:5000**
 
-## 🐳 Docker Setup
+### Step 6: Start Coding!
 
-### Build Docker Image
+- Press `F5` in VS Code to run with debugger
+- Or use terminal: `python run.py`
+- Database files auto-created in `instance/` folder
+- Hot reload enabled in development mode
 
+## 🐧 Alternative: Command Line Setup (No VS Code)
+
+### Quick Setup
+
+```bash
+# 1. Clone repo
+git clone https://github.com/DefinitelyNotABot-del/smart-parking-app.git
+cd smart-parking-app
+
+# 2. Create & activate virtual environment
+python -m venv .venv
+# Windows: .venv\Scripts\activate
+# Linux/Mac: source .venv/bin/activate
+
+# 3. Install dependencies
+pip install -r requirements.txt
+
+# 4. Run app
+python run.py
+```
+
+Open: **http://localhost:5000**
+
+## 🐳 Docker Setup (Optional)
+
+### Prerequisites
+- Docker Desktop installed and running
+
+### Setup Steps
+
+**1. Build Docker Image**
 ```bash
 docker build -t smart-parking-app .
 ```
 
-### Run Container
-
+**2. Run Container**
 ```bash
 docker run -d -p 5000:5000 --name parking-app smart-parking-app
 ```
 
-### Stop Container
+**3. Verify Running**
+```bash
+docker ps
+```
 
+**4. View Logs**
+```bash
+docker logs parking-app
+```
+
+**5. Stop & Remove**
 ```bash
 docker stop parking-app
 docker rm parking-app
 ```
+
+Open: **http://localhost:5000**
 
 ## ☁️ Azure Deployment
 
@@ -209,25 +252,45 @@ smart-parking-app/
 └── README.md                # This file
 ```
 
-## 🔧 Configuration
+## 📦 What Gets Installed
 
-### Database
+### Python Packages (from requirements.txt)
 
-The app uses **dual SQLite architecture**:
-- `instance/parking.db` - Main production database
-- `instance/demo.db` - Demo data with pre-populated lots
+**Core Framework:**
+- Flask 3.1.2 - Web framework
+- Flask-SocketIO 5.5.1 - Real-time WebSocket support
 
-Databases are created automatically on first run.
+**ML/AI:**
+- scikit-learn 1.6.1 - Machine learning models
+- numpy 2.3.4 - Numerical computing
+- pandas 2.3.3 - Data manipulation
 
-### ML Models
+**Production Server:**
+- gunicorn - WSGI HTTP server
+- eventlet - Async networking library
 
-Pre-trained models located in `data/ml_training/`:
-- `occupancy_model.pkl` - Predicts parking occupancy
-- `pricing_model.pkl` - Dynamic pricing recommendations
-- `forecasting_model.pkl` - Peak hours prediction
-- `preference_model.pkl` - User spot recommendations
+**Database:**
+- SQLite3 - Built into Python (no install needed!)
 
-Models are loaded on-demand to minimize memory usage.
+### Project Files Auto-Created
+
+**On First Run:**
+```
+instance/
+  ├── parking.db      # Main database (created automatically)
+  └── demo.db         # Demo data (created automatically)
+```
+
+**ML Models (Pre-trained):**
+```
+data/ml_training/
+  ├── occupancy_model.pkl     # Predicts parking occupancy
+  ├── pricing_model.pkl       # Dynamic pricing recommendations
+  ├── forecasting_model.pkl   # Peak hours prediction
+  └── preference_model.pkl    # User spot recommendations
+```
+
+Everything auto-initializes - just run `python run.py`!
 
 ## 🧪 Testing
 
@@ -272,39 +335,64 @@ pip install scikit-learn==1.6.1 pandas==2.3.3 numpy==2.3.4
 pip install gunicorn
 ```
 
-## 🆘 Troubleshooting
+## 🆘 Common Issues & Fixes
 
-### Port Already in Use
+### "Port 5000 already in use"
 
+**Windows:**
 ```bash
-# Windows
 netstat -ano | findstr :5000
 taskkill /PID <PID> /F
+```
 
-# Linux/macOS
+**Linux/macOS:**
+```bash
 lsof -ti:5000 | xargs kill -9
 ```
 
-### Database Locked Error
+### "Module not found" or Import Errors
 
 ```bash
-# Stop all running instances
-# Delete instance/*.db-shm and instance/*.db-wal files
-# Restart application
-```
+# Make sure virtual environment is activated
+# You should see (.venv) in terminal prompt
 
-### Module Not Found
-
-```bash
 # Reinstall dependencies
 pip install --upgrade -r requirements.txt
 ```
 
-### Azure Deployment Fails
+### "Python not found"
 
-- Check `startup.txt` points to `startup.sh`
-- Verify Python runtime: `az webapp config show --name <app-name> --resource-group <rg-name>`
-- View logs: `az webapp log tail --name <app-name> --resource-group <rg-name>`
+Make sure Python is in PATH:
+- Windows: Reinstall Python with "Add to PATH" checked
+- Linux/Mac: Use `python3` instead of `python`
+
+### Database Won't Create
+
+```bash
+# Create instance folder manually
+mkdir instance
+
+# Run app again
+python run.py
+```
+
+### VS Code Not Finding Python
+
+1. Press `Ctrl+Shift+P`
+2. Type: `Python: Select Interpreter`
+3. Choose `.venv/Scripts/python.exe` (Windows) or `.venv/bin/python` (Linux/Mac)
+
+### Can't Activate Virtual Environment (Windows)
+
+If you get "execution policy" error:
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+Then try activating again:
+```bash
+.venv\Scripts\activate
+```
 
 ## 📝 License
 
