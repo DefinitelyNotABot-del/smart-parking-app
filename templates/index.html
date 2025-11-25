@@ -64,9 +64,26 @@
                         </a>
                     </small>
                     <div id="demoInfo" style="display:none;" class="alert alert-light mt-2 small">
-                        <strong>Owner:</strong> demo.owner@smartparking.com<br>
-                        <strong>Customer:</strong> demo.customer@smartparking.com<br>
-                        <strong>Password:</strong> demo123
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <div><strong>Owner:</strong> <span id="demoOwnerEmail">demo.owner@smartparking.com</span></div>
+                            <div>
+                                <button id="autofillOwner" class="btn btn-sm btn-outline-primary">Autofill</button>
+                                <button id="copyOwner" class="btn btn-sm btn-outline-secondary">Copy</button>
+                            </div>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <div><strong>Customer:</strong> <span id="demoCustomerEmail">demo.customer@smartparking.com</span></div>
+                            <div>
+                                <button id="autofillCustomer" class="btn btn-sm btn-outline-primary">Autofill</button>
+                                <button id="copyCustomer" class="btn btn-sm btn-outline-secondary">Copy</button>
+                            </div>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div><strong>Password:</strong> <span id="demoPassword">demo123</span></div>
+                            <div>
+                                <button id="copyPassword" class="btn btn-sm btn-outline-secondary">Copy</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 
@@ -148,6 +165,41 @@
                 toggleForms();
             }
         });
+
+        // Demo credentials autofill / copy helpers
+        const autofillOwnerBtn = document.getElementById('autofillOwner');
+        const autofillCustomerBtn = document.getElementById('autofillCustomer');
+        const copyOwnerBtn = document.getElementById('copyOwner');
+        const copyCustomerBtn = document.getElementById('copyCustomer');
+        const copyPasswordBtn = document.getElementById('copyPassword');
+
+        function copyToClipboard(text) {
+            navigator.clipboard && navigator.clipboard.writeText(text).catch(()=>{});
+        }
+
+        if (autofillOwnerBtn) {
+            autofillOwnerBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                document.getElementById('loginEmail').value = document.getElementById('demoOwnerEmail').textContent.trim();
+                document.getElementById('loginPassword').value = document.getElementById('demoPassword').textContent.trim();
+            });
+        }
+        if (autofillCustomerBtn) {
+            autofillCustomerBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                document.getElementById('loginEmail').value = document.getElementById('demoCustomerEmail').textContent.trim();
+                document.getElementById('loginPassword').value = document.getElementById('demoPassword').textContent.trim();
+            });
+        }
+        if (copyOwnerBtn) {
+            copyOwnerBtn.addEventListener('click', (e) => { e.preventDefault(); copyToClipboard(document.getElementById('demoOwnerEmail').textContent.trim()); });
+        }
+        if (copyCustomerBtn) {
+            copyCustomerBtn.addEventListener('click', (e) => { e.preventDefault(); copyToClipboard(document.getElementById('demoCustomerEmail').textContent.trim()); });
+        }
+        if (copyPasswordBtn) {
+            copyPasswordBtn.addEventListener('click', (e) => { e.preventDefault(); copyToClipboard(document.getElementById('demoPassword').textContent.trim()); });
+        }
 
         function toggleForms() {
             const loginForm = document.getElementById('loginForm');

@@ -200,6 +200,10 @@
                     bookings.forEach(booking => {
                         const bookingEl = document.createElement('div');
                         bookingEl.className = 'booking-item card bg-light mb-2';
+                        // Make booking card clickable to show location on the map
+                        bookingEl.style.cursor = 'pointer';
+                        if (booking.latitude) bookingEl.dataset.lat = booking.latitude;
+                        if (booking.longitude) bookingEl.dataset.lng = booking.longitude;
                         const startTime = new Date(booking.start_time).toLocaleString();
                         const endTime = new Date(booking.end_time).toLocaleString();
                         bookingEl.innerHTML = `
@@ -212,6 +216,21 @@
                                 </p>
                             </div>
                         `;
+                        // click -> focus map on booking location (if coords available)
+                        bookingEl.addEventListener('click', () => {
+                            const lat = booking.latitude || booking.lat || booking.latitude;
+                            const lng = booking.longitude || booking.lon || booking.longitude;
+                            if (lat && lng) {
+                                const latlng = [parseFloat(lat), parseFloat(lng)];
+                                map.setView(latlng, 15);
+                                if (marker) map.removeLayer(marker);
+                                marker = L.marker(latlng).addTo(map).bindPopup(`<strong>${booking.location}</strong>`).openPopup();
+                            } else {
+                                // If coords not present, show a small message
+                                alert('Location coordinates not available for this booking.');
+                            }
+                        });
+
                         bookingsList.appendChild(bookingEl);
                     });
                 } else {

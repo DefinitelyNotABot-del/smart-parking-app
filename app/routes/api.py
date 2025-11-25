@@ -560,8 +560,8 @@ def get_customer_bookings():
     # Only show ACTIVE and FUTURE bookings (end_time is in the future)
     cursor.execute(
         """
-        SELECT b.booking_id, b.lot_id, b.spot_id, s.type, l.location, b.start_time, b.end_time,
-               b.total_cost, b.price_per_hour
+         SELECT b.booking_id, b.lot_id, b.spot_id, s.type, l.location, l.latitude, l.longitude, b.start_time, b.end_time,
+             b.total_cost, b.price_per_hour
         FROM bookings b
         JOIN spots s ON b.lot_id = s.lot_id AND b.spot_id = s.spot_id
         JOIN lots l ON s.lot_id = l.lot_id
