@@ -256,6 +256,10 @@ def ensure_databases_ready(app):
     demo_exists = os.path.exists(demo_db_path)
     regular_exists = os.path.exists(regular_db_path)
     
+    # Defensive default: ensure has_tables is always defined so an exception
+    # during the check below won't cause an UnboundLocalError later.
+    has_tables = False
+
     if demo_exists and regular_exists:
         # Both databases exist, just verify they have tables
         try:
@@ -268,8 +272,11 @@ def ensure_databases_ready(app):
             if has_tables:
                 print("✅ Databases already initialized")
                 return
-        except:
-            pass
+        except Exception as exc:
+            # If anything goes wrong reading the existing demo DB, log it and
+            # fall back to treating the DB as not-initialized so we can recover.
+            print(f"⚠️  Demo DB table-check failed: {exc}")
+            has_tables = False
     
     # Need to initialize databases
     print("\n" + "="*70)
