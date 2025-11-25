@@ -70,6 +70,7 @@ db.sqlite3-journal
 
 # Flask stuff:
 instance/
+!instance/demo.db
 .webassets-cache
 flask_*.log
 *.log
