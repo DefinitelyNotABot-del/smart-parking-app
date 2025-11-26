@@ -45,17 +45,24 @@
             border-left: 1px solid #dee2e6;
             overflow-y: auto;
             z-index: 1000;
-            padding: 20px;
+            padding: 10px; /* reduce inner whitespace */
         }
         /* Ensure the form elements and cards inside sidebar fit nicely within 100% width */
         .sidebar .card,
         .sidebar .card .card-body {
             width: 100%;
             box-sizing: border-box;
+            margin: 6px 0; /* closer spacing between cards */
         }
         .sidebar input.form-control, .sidebar select.form-control, .sidebar .btn-block {
             width: 100%;
         }
+
+        /* Slightly reduce default card-body padding inside the sidebar */
+        .sidebar .card .card-body { padding: 10px 12px; }
+
+        /* make headers smaller so content uses more horizontal space */
+        .sidebar h3 { font-size: 1.25rem; margin-bottom: 0.5rem; }
     </style>
 </head>
 <body>
