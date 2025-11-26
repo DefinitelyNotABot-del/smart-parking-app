@@ -421,6 +421,8 @@
         // Initial page load
         setDefaultTimeWindow();
         updateCustomerPage();
+        // Force Leaflet to reflow map size after layout changes
+        setTimeout(() => { if (map && map.invalidateSize) map.invalidateSize(true); }, 300);
     </script>
     <script>
         const socket = io();
