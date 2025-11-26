@@ -22,7 +22,7 @@
             left: 0;
             top: 0;
             bottom: 0;
-            right: 35vw; /* leave space for fixed 35% sidebar */
+            right: 30vw; /* leave space for fixed 30% sidebar */
         }
         .search-container {
             margin-top: 1rem;
@@ -32,12 +32,12 @@
             padding: 1rem;
             border-left: 4px solid #007bff;
         }
-        /* Page-specific override: make sidebar fixed to right and occupy 1/4 width */
+        /* Page-specific override: make sidebar fixed to right and occupy 30% width */
         .sidebar {
             position: fixed;
             right: 0;
             top: 0;
-            width: 35vw;
+            width: 30vw;
             min-width: 300px;
             max-width: 420px;
             height: 100%;
@@ -46,6 +46,15 @@
             overflow-y: auto;
             z-index: 1000;
             padding: 20px;
+        }
+        /* Ensure the form elements and cards inside sidebar fit nicely within 100% width */
+        .sidebar .card,
+        .sidebar .card .card-body {
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .sidebar input.form-control, .sidebar select.form-control, .sidebar .btn-block {
+            width: 100%;
         }
     </style>
 </head>
