@@ -12,39 +12,17 @@
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <style>
+        /* Use static/css/style.css for layout styling; keep only small page-specific tweaks here */
         body, html {
             height: 100%;
             margin: 0;
         }
         #map {
-            height: 100%;
-            width: 100%;
-        }
-        .sidebar {
-            position: fixed;
-            right: 0;
+            position: absolute;
+            left: 0;
             top: 0;
-            width: 450px;
-            height: 100%;
-            background: white;
-            box-shadow: -2px 0 10px rgba(0,0,0,0.1);
-            overflow-y: auto;
-            padding: 20px;
-            z-index: 1000;
-            transition: transform 0.3s ease;
-        }
-        .sidebar.collapsed {
-            transform: translateX(100%);
-        }
-        #sidebar-toggle {
-            position: fixed;
-            right: 420px;
-            top: 20px;
-            z-index: 1001;
-            transition: right 0.3s ease;
-        }
-        .sidebar.collapsed + #sidebar-toggle {
-            right: 20px;
+            bottom: 0;
+            right: 25vw; /* leave space for fixed 1/4 sidebar */
         }
         .search-container {
             margin-top: 1rem;
@@ -54,11 +32,25 @@
             padding: 1rem;
             border-left: 4px solid #007bff;
         }
+        /* Page-specific override: make sidebar fixed to right and occupy 1/4 width */
+        .sidebar {
+            position: fixed;
+            right: 0;
+            top: 0;
+            width: 25vw;
+            min-width: 300px;
+            max-width: 420px;
+            height: 100%;
+            background-color: white;
+            border-left: 1px solid #dee2e6;
+            overflow-y: auto;
+            z-index: 1000;
+            padding: 20px;
+        }
     </style>
 </head>
 <body>
     <div id="map"></div>
-    <button id="sidebar-toggle" class="btn btn-primary">&lt;</button>
     <div class="sidebar">
         <div class="card mb-3">
             <div class="card-body">
@@ -382,19 +374,7 @@
             }
         });
 
-        const sidebar = document.querySelector('.sidebar');
-        const sidebarToggle = document.getElementById('sidebar-toggle');
-
-        sidebarToggle.addEventListener('click', () => {
-            sidebar.classList.toggle('collapsed');
-            if (sidebar.classList.contains('collapsed')) {
-                sidebarToggle.innerHTML = '&gt;';
-                sidebarToggle.style.left = '20px';
-            } else {
-                sidebarToggle.innerHTML = '&lt;';
-                sidebarToggle.style.left = '420px';
-            }
-        });
+        // Sidebar is fixed and non-collapsible; no toggle behavior.
 
         // AI Prediction Functions
         async function showAIPredictions(lotId) {
