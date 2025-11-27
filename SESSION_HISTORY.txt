@@ -6142,6 +6142,182 @@ PROOF OF WORK FOR ACADEMIC REVIEW:
 7. Two-database architecture for persistence
 8. Live demo at https://smart-parking-app.azurewebsites.net
 
+================================================================================
+14. November 26, 2025 - Customer Page UI Redesign & Session Documentation
+================================================================================
+
+SESSION OVERVIEW
+----------------
+This session focused on major UI/UX improvements to the customer dashboard,
+specifically redesigning the sidebar from a sliding toggle panel to a fixed
+30% width panel on the right side of the screen.
+
+CHANGES IMPLEMENTED
+-------------------
+
+1. CUSTOMER PAGE SIDEBAR REDESIGN (templates/customer.html)
+   
+   PROBLEM: The previous sliding sidebar design caused:
+   - A blue bar appearing on the left side when sidebar was open
+   - Confusing toggle button behavior
+   - Map not resizing properly when sidebar state changed
+   - Inconsistent user experience
+   
+   SOLUTION: Converted to fixed 30% width sidebar on the right
+   
+   CSS CHANGES (inline styles in customer.html):
+   ```css
+   #map {
+       position: absolute;
+       left: 0;
+       top: 0;
+       bottom: 0;
+       right: 30vw; /* leave space for fixed 30% sidebar */
+   }
+   
+   .sidebar {
+       position: fixed;
+       right: 0;
+       top: 0;
+       width: 30vw;
+       min-width: 300px;    /* prevent sidebar becoming too narrow */
+       max-width: 420px;    /* prevent sidebar becoming too wide */
+       height: 100%;
+       background-color: white;
+       border-left: 1px solid #dee2e6;
+       overflow-y: auto;
+       z-index: 1000;
+       padding: 10px;       /* reduced from default for compact layout */
+   }
+   ```
+   
+   LAYOUT BREAKDOWN:
+   - Map occupies 70% of viewport width (left side)
+   - Sidebar occupies 30% of viewport width (right side, fixed position)
+   - No toggle button needed - sidebar always visible
+   - map.invalidateSize() called on load to ensure Leaflet renders correctly
+   
+   JAVASCRIPT CHANGES:
+   - Removed all toggle button and sliding animation code
+   - Added: setTimeout(() => { if (map && map.invalidateSize) map.invalidateSize(true); }, 300);
+     This ensures the map recalculates its size after the DOM settles
+
+2. LOGIN PAGE CLEANUP (templates/index.html)
+   
+   PROBLEM: Previous autofill/copy buttons for demo credentials were causing issues
+   
+   SOLUTION: Removed autofill and copy buttons, kept demo credentials as display-only
+   
+   CHANGES:
+   - Removed "Autofill Owner" and "Autofill Customer" buttons
+   - Removed "Copy" buttons next to each credential
+   - Demo credentials now shown in a collapsible section (click to reveal)
+   - Users manually type credentials for more reliable login flow
+   
+   RATIONALE: Production stability was prioritized over convenience features
+
+3. BOOKING CARDS CLICKABLE TO SHOW MAP LOCATION
+   
+   PROBLEM: Customers couldn't easily see where their booked spots were located
+   
+   SOLUTION: Made booking cards clickable - clicking pans the map to the booking location
+   
+   CODE ADDED:
+   ```javascript
+   bookingEl.style.cursor = 'pointer';
+   if (booking.latitude) bookingEl.dataset.lat = booking.latitude;
+   if (booking.longitude) bookingEl.dataset.lng = booking.longitude;
+   
+   bookingEl.addEventListener('click', () => {
+       const lat = booking.latitude || booking.lat;
+       const lng = booking.longitude || booking.lon;
+       if (lat && lng) {
+           const latlng = [parseFloat(lat), parseFloat(lng)];
+           map.setView(latlng, 15);
+           if (marker) map.removeLayer(marker);
+           marker = L.marker(latlng).addTo(map)
+               .bindPopup(`<strong>${booking.location}</strong>`).openPopup();
+       } else {
+           alert('Location coordinates not available for this booking.');
+       }
+   });
+   ```
+
+4. API ENDPOINT UPDATE (app/routes/api.py)
+   
+   CHANGE: Added latitude and longitude to customer bookings query
+   
+   The /api/customer/bookings endpoint now returns lat/lng coordinates:
+   ```sql
+   SELECT b.*, l.name as location, l.latitude, l.longitude, s.type
+   FROM bookings b
+   JOIN lots l ON b.lot_id = l.lot_id
+   JOIN spots s ON b.spot_id = s.spot_id AND b.lot_id = s.lot_id
+   WHERE b.user_id = ? AND b.end_time >= ?
+   ORDER BY b.start_time ASC
+   ```
+
+5. IST TIMEZONE CONSISTENCY (app/utils.py)
+   
+   ADDITIONS:
+   - IST = timezone(timedelta(hours=5, minutes=30))
+   - def get_ist_now(): return datetime.now(IST)
+   
+   All datetime.now() calls throughout the codebase now use get_ist_now()
+   to ensure consistent India Standard Time regardless of server timezone
+
+TECHNICAL DETAILS
+-----------------
+
+WHY 30vw FOR SIDEBAR WIDTH?
+- 30vw = 30% of viewport width
+- On a 1920px wide screen: 576px sidebar, 1344px map
+- On a 1366px wide screen: 410px sidebar, 956px map
+- min-width: 300px prevents sidebar from becoming unusable on small screens
+- max-width: 420px prevents sidebar from taking too much space on ultra-wide screens
+
+WHY FIXED POSITIONING?
+- position: fixed removes element from normal document flow
+- right: 0 anchors sidebar to right edge of viewport
+- Sidebar stays in place even if page scrolls (though page doesn't scroll)
+- Map can render independently without worrying about sidebar's DOM position
+
+WHY map.invalidateSize()?
+- Leaflet caches the map container size at initialization
+- If container size changes after init (our CSS sets final size), tiles may not render
+- invalidateSize(true) forces Leaflet to recalculate and rerender
+- The 300ms delay allows CSS transitions and DOM reflows to complete first
+
+CSS BOX MODEL NOTES:
+- padding: 10px on sidebar means content has 10px gap from all edges
+- This reduced from default ~20px to maximize content space in narrow sidebar
+- box-sizing: border-box on cards ensures padding doesn't add to width
+
+DEPLOYMENT STATUS
+-----------------
+- All changes committed and pushed to main branch
+- GitHub Actions CI/CD pipeline triggered deployment to Azure
+- Azure App Service at https://smart-parking-app.azurewebsites.net updated
+- Deployment confirmed working with "Everything up-to-date" message
+
+FILES MODIFIED THIS SESSION
+---------------------------
+1. templates/customer.html - Complete sidebar redesign
+2. templates/index.html - Removed autofill/copy buttons
+3. app/routes/api.py - Added lat/lng to customer bookings
+4. app/utils.py - Added IST timezone helpers
+
+TESTING PERFORMED
+-----------------
+- Customer login with demo credentials: WORKING
+- Booking cards display: WORKING
+- Click on booking → map pans to location: WORKING
+- Sidebar displays correctly at 30% width: WORKING
+- Map fills remaining 70% space: WORKING
+- No blue bar or visual artifacts: FIXED
+
+================================================================================
+
 This document is for personal reference only and should not be committed to
 version control or shared publicly due to architectural details that could
 aid potential security analysis.
