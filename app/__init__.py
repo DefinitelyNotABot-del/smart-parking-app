@@ -34,7 +34,6 @@ def create_app(test_config=None):
     )
 
     # Configure logging to stdout
-    import logging
     logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     app.logger.setLevel(logging.DEBUG)
 
