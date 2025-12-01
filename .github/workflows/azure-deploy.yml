@@ -73,7 +73,7 @@ jobs:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
           package: .
 
-      - name: Fallback: Zip-deploy if OneDeploy failed
+      - name: "Fallback - Zip-deploy if OneDeploy failed"
         if: ${{ steps.deploy.outcome == 'failure' }}
         run: |
           echo "OneDeploy action failed — attempting fallback with az webapp deployment config-zip"
