@@ -152,3 +152,10 @@ SESSION_HISTORY.txt
 
 # Exclude detailed documentation folder (kept locally / in backups)
 documentation/
+
+# Ignore demo db temp backups and generated files, keep the primary tracked one
+instance/demo_from_git.db
+instance/demo_original.db
+instance/demo*.bak
+instance/demo_*.db
+instance/backups/
