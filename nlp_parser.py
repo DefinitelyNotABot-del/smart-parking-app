@@ -7,11 +7,12 @@ from difflib import SequenceMatcher
 
 class ParkingNLPParser:
     def __init__(self):
-        # Vehicle type patterns
+        # Vehicle type patterns - mapped to actual spot types (large/small)
+        # 'large' = cars, SUVs, trucks
+        # 'small' = bikes, motorcycles, scooters
         self.vehicle_patterns = {
-            'car': r'\b(car|sedan|suv|vehicle|auto|automobile)\b',
-            'bike': r'\b(bike|motorcycle|motorbike|scooter|two[\s-]?wheeler)\b',
-            'truck': r'\b(truck|lorry|heavy|large vehicle)\b'
+            'large': r'\b(car|sedan|suv|vehicle|auto|automobile|truck|lorry|heavy|four[\s-]?wheeler)\b',
+            'small': r'\b(bike|motorcycle|motorbike|scooter|two[\s-]?wheeler|cycle|scooty)\b'
         }
         
         # Location indicators
@@ -67,22 +68,26 @@ class ParkingNLPParser:
         """
         user_query_lower = user_query.lower()
         
-        # Extract vehicle type
+        # Extract vehicle type FIRST
         vehicle_type = self.extract_vehicle_type(user_query)
         
-        # Extract location preference
-        location_query = self.extract_location(user_query)
+        # Remove vehicle type words from query BEFORE extracting location
+        # This prevents "garuda mall bike" -> location="bike"
+        clean_query = user_query_lower
+        for keywords in self.vehicle_patterns.values():
+            clean_query = re.sub(keywords, '', clean_query).strip()
+        clean_query = ' '.join(clean_query.split())  # normalize whitespace
+        
+        # Extract location preference from cleaned query
+        location_query = self.extract_location(clean_query)
+        
+        # If no location extracted, use the cleaned query directly
+        if not location_query:
+            location_query = clean_query
         
         # Log what we extracted
         print(f"Extracted - Vehicle: {vehicle_type}, Location: '{location_query}'")
         print(f"Available locations: {[s['location'] for s in available_spots]}")
-        
-        # If no location extracted, try using the whole query
-        if not location_query:
-            location_query = user_query_lower
-            # Remove vehicle type words
-            for keywords in self.vehicle_patterns.values():
-                location_query = re.sub(keywords, '', location_query).strip()
         
         # Score each spot
         best_spot = None
@@ -94,10 +99,14 @@ class ParkingNLPParser:
             reasons = []
             
             # Match vehicle type (HIGH priority - 10 points)
+            # vehicle_type is already 'large' or 'small' to match spot types
             if vehicle_type:
                 if spot['type'] == vehicle_type:
                     score += 10
-                    reasons.append(f"{vehicle_type} parking")
+                    reasons.append(f"{vehicle_type} spot")
+                elif (vehicle_type == 'small' and spot['type'] == 'large'):
+                    # User wants bike spot but only large available - slight penalty
+                    score -= 2
                 else:
                     score -= 5  # Bigger penalty for wrong type
             else:
